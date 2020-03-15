@@ -47,6 +47,8 @@ library(patchwork)
 library(tidybayes)
 library(sjPlot)
 library(broom)
+library(future)
+library(furrr)
 
 # Data ----
 
@@ -297,10 +299,7 @@ simulate_data <- function(effect_size, k_sites, n_per_site, between_site_variati
 
 # function to upated models with newly simulated data
 simulation_iteration <- function(seed, data, fitted_model, effect_size, ...) {
-  
-  # progress bar
-  pb$tick()$print()
-  
+
   # set seed
   set.seed(seed)
   
@@ -327,8 +326,9 @@ simulation_iteration <- function(seed, data, fitted_model, effect_size, ...) {
 k_sites                <- pull(count(data_rrr_site_level)) 
 n_per_site             <- pull(round(count(data_rrr_participant_level)/k_sites, 0))
 true_effect_size       <- 0.17  # started with 0.16, from frequentist power analysis
-between_site_variation <- 0.10  # rounded down from meta of existing literature, given RRR's stardardized methods 
-n_sim                  <- 2
+rope_half_width        <- 0.20
+between_site_variation <- 0.10  # rounded down from meta of existing literature, given RRR's stardardized methods its likely to be lower
+n_sim                  <- 100
 
 
 # fit archetypal model fits, which will be updated with new data in each sim
@@ -410,51 +410,54 @@ fit_good_null_sim_archetype <-
 
 ```{r message=FALSE, warning=FALSE}
 
-if(file.exists("models/simulations_real.RData")){
+if(file.exists("models/simulations.RData")){
   
-  load("models/simulations_real.RData")
+  load("models/simulations.RData")
   
 } else {
-  
-  # reset progress bar
-  pb <- progress_estimated(n_sim*8)
   
   # run simulation
   time_start <- Sys.time()
   
+  # run furrr:::future_map in parallel
+  plan(multiprocess)
+  
   ## simulations for detecting a true effect
   simulation_good_real <-
     tibble(seed = 1:n_sim) %>% 
-    mutate(tidy = map(seed, simulation_iteration, 
-                      effect_size            = true_effect_size,
-                      fitted_model           = fit_good_real_sim_archetype,
-                      k_sites                = k_sites,
-                      n_per_site             = n_per_site,
-                      between_site_variation = between_site_variation)) %>% 
+    mutate(tidy = future_map(seed, simulation_iteration, 
+                             .progress              = TRUE,
+                             effect_size            = true_effect_size,
+                             fitted_model           = fit_good_real_sim_archetype,
+                             k_sites                = k_sites,
+                             n_per_site             = n_per_site,
+                             between_site_variation = between_site_variation)) %>% 
     unnest(tidy) %>%
     mutate(true_effect = true_effect_size,
            prior = "Well-estimated real effect")
-
+  
   simulation_poor_real <-
     tibble(seed = 1:n_sim) %>% 
-    mutate(tidy = map(seed, simulation_iteration, 
-                      effect_size            = true_effect_size,
-                      fitted_model           = fit_poor_real_sim_archetype,
-                      k_sites                = k_sites,
-                      n_per_site             = n_per_site,
-                      between_site_variation = between_site_variation)) %>% 
+    mutate(tidy = future_map(seed, simulation_iteration, 
+                             .progress              = TRUE,
+                             effect_size            = true_effect_size,
+                             fitted_model           = fit_poor_real_sim_archetype,
+                             k_sites                = k_sites,
+                             n_per_site             = n_per_site,
+                             between_site_variation = between_site_variation)) %>% 
     unnest(tidy) %>%
     mutate(true_effect = true_effect_size,
            prior = "Poorly-estimated real effect")
   
   simulation_poor_null <-
     tibble(seed = 1:n_sim) %>% 
-    mutate(tidy = map(seed, simulation_iteration, 
-                      effect_size            = true_effect_size,
-                      fitted_model           = fit_poor_null_sim_archetype,
-                      k_sites                = k_sites,
-                      n_per_site             = n_per_site,
-                      between_site_variation = between_site_variation)) %>% 
+    mutate(tidy = future_map(seed, simulation_iteration, 
+                             .progress              = TRUE,
+                             effect_size            = true_effect_size,
+                             fitted_model           = fit_poor_null_sim_archetype,
+                             k_sites                = k_sites,
+                             n_per_site             = n_per_site,
+                             between_site_variation = between_site_variation)) %>% 
     unnest(tidy) %>%
     mutate(true_effect = true_effect_size,
            prior = "Poorly-estimated null effect")
@@ -462,12 +465,13 @@ if(file.exists("models/simulations_real.RData")){
   simulation_good_null <-
     tibble(seed = 1:n_sim) %>% 
     mutate(true_effect = true_effect_size,
-           tidy = map(seed, simulation_iteration, 
-                      effect_size            = true_effect_size,
-                      fitted_model           = fit_good_null_sim_archetype,
-                      k_sites                = k_sites,
-                      n_per_site             = n_per_site,
-                      between_site_variation = between_site_variation)) %>% 
+           tidy = future_map(seed, simulation_iteration, 
+                             .progress              = TRUE,
+                             effect_size            = true_effect_size,
+                             fitted_model           = fit_good_null_sim_archetype,
+                             k_sites                = k_sites,
+                             n_per_site             = n_per_site,
+                             between_site_variation = between_site_variation)) %>% 
     unnest(tidy) %>%
     mutate(true_effect = true_effect_size,
            prior = "Well-estimated null effect")
@@ -475,36 +479,39 @@ if(file.exists("models/simulations_real.RData")){
   ## simulations for detecting a null effect
   simulation_truenull_good_real <-
     tibble(seed = 1:n_sim) %>% 
-    mutate(tidy = map(seed, simulation_iteration, 
-                      effect_size            = 0,
-                      fitted_model           = fit_good_real_sim_archetype,
-                      k_sites                = k_sites,
-                      n_per_site             = n_per_site,
-                      between_site_variation = between_site_variation)) %>% 
+    mutate(tidy = future_map(seed, simulation_iteration, 
+                             .progress              = TRUE,
+                             effect_size            = 0,
+                             fitted_model           = fit_good_real_sim_archetype,
+                             k_sites                = k_sites,
+                             n_per_site             = n_per_site,
+                             between_site_variation = between_site_variation)) %>% 
     unnest(tidy) %>%
     mutate(true_effect = 0,
            prior = "Well-estimated real effect")
   
   simulation_truenull_poor_real <-
     tibble(seed = 1:n_sim) %>% 
-    mutate(tidy = map(seed, simulation_iteration, 
-                      effect_size            = 0,
-                      fitted_model           = fit_poor_real_sim_archetype,
-                      k_sites                = k_sites,
-                      n_per_site             = n_per_site,
-                      between_site_variation = between_site_variation)) %>% 
+    mutate(tidy = future_map(seed, simulation_iteration, 
+                             .progress              = TRUE,
+                             effect_size            = 0,
+                             fitted_model           = fit_poor_real_sim_archetype,
+                             k_sites                = k_sites,
+                             n_per_site             = n_per_site,
+                             between_site_variation = between_site_variation)) %>% 
     unnest(tidy) %>%
     mutate(true_effect = 0,
            prior = "Poorly-estimated real effect")
   
   simulation_truenull_poor_null <-
     tibble(seed = 1:n_sim) %>% 
-    mutate(tidy = map(seed, simulation_iteration, 
-                      effect_size            = 0,
-                      fitted_model           = fit_poor_null_sim_archetype,
-                      k_sites                = k_sites,
-                      n_per_site             = n_per_site,
-                      between_site_variation = between_site_variation)) %>% 
+    mutate(tidy = future_map(seed, simulation_iteration, 
+                             .progress              = TRUE,
+                             effect_size            = 0,
+                             fitted_model           = fit_poor_null_sim_archetype,
+                             k_sites                = k_sites,
+                             n_per_site             = n_per_site,
+                             between_site_variation = between_site_variation)) %>% 
     unnest(tidy) %>%
     mutate(true_effect = 0,
            prior = "Poorly-estimated null effect")
@@ -512,12 +519,13 @@ if(file.exists("models/simulations_real.RData")){
   simulation_truenull_good_null <-
     tibble(seed = 1:n_sim) %>% 
     mutate(true_effect = true_effect_size,
-           tidy = map(seed, simulation_iteration, 
-                      effect_size            = 0,
-                      fitted_model           = fit_good_null_sim_archetype,
-                      k_sites                = k_sites,
-                      n_per_site             = n_per_site,
-                      between_site_variation = between_site_variation)) %>% 
+           tidy = future_map(seed, simulation_iteration, 
+                             .progress              = TRUE,
+                             effect_size            = 0,
+                             fitted_model           = fit_good_null_sim_archetype,
+                             k_sites                = k_sites,
+                             n_per_site             = n_per_site,
+                             between_site_variation = between_site_variation)) %>% 
     unnest(tidy) %>%
     mutate(true_effect = 0,
            prior = "Well-estimated null effect")
@@ -548,7 +556,7 @@ if(file.exists("models/simulations_real.RData")){
 simulations$time
 
 # plot
-simulations_real$results %>% 
+simulations$results %>% 
   mutate(seed = fct_reorder(as.factor(seed), estimate),
          true_effect_string = paste("True effect =", true_effect),
          prior_string = paste("Prior:", prior)) %>%
@@ -558,21 +566,41 @@ simulations_real$results %>%
   ggplot(aes(x = rowname, y = estimate, ymin = lower, ymax = upper)) +
   facet_wrap(~ true_effect_string + prior_string, ncol = 2) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
-  geom_hline(yintercept = true_effect_size, linetype = "dashed", color = "darkgreen") +
+  geom_hline(aes(yintercept = true_effect), linetype = "dashed", color = "darkgreen") +
   geom_pointrange(fatten = 1/2) +
-  labs(x = "Simulations iterations",
+  labs(x = "Simulation iterations",
+       y = expression(delta)) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+simulations$results %>% 
+  filter(prior == "Poorly-estimated null effect") %>%
+  mutate(seed = fct_reorder(as.factor(seed), estimate),
+         true_effect_string = paste("True effect =", true_effect),
+         prior_string = paste("Prior:", prior)) %>%
+  arrange(seed) %>%
+  rownames_to_column(var = "rowname") %>%
+  mutate(rowname = as.numeric(as.character(rowname))) %>%
+  ggplot(aes(x = rowname, y = estimate, ymin = lower, ymax = upper)) +
+  facet_wrap(~ true_effect_string, ncol = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  geom_hline(aes(yintercept = true_effect), linetype = "dashed", color = "darkgreen") +
+  geom_pointrange(fatten = 1/2) +
+  labs(x = "Simulation iterations",
        y = expression(delta)) +
   theme(axis.text.x = element_blank(),
         axis.ticks.x = element_blank())
 
 # table
-simulations_real$results %>% 
+simulations$results %>% 
   mutate(null_test = ifelse(lower > 0, 1, 0),
-         hdi_estimation = ifelse(lower < true_effect_size & upper > true_effect_size, 1, 0)) %>% 
+         hdi_estimation = ifelse(lower < true_effect & upper > true_effect, 1, 0),
+         rope_test = ifelse(lower > (rope_half_width*-1) & upper < rope_half_width, 1, 0)) %>% 
   group_by(true_effect, prior) %>%
   summarise(mean_estimate   = round(mean(estimate), 2),
             sd_estimate     = round(sd(estimate), 2),
             power_null_test = mean(null_test),
+            power_rope_test = mean(rope_test),
             power_esimation = mean(hdi_estimation)) %>%
   mutate(prior = fct_relevel(prior,
                              "Well-estimated real effect",
@@ -580,6 +608,21 @@ simulations_real$results %>%
                              "Poorly-estimated null effect",
                              "Well-estimated null effect")) %>%
   arrange(desc(true_effect), prior) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+simulations$results %>% 
+  filter(prior == "Poorly-estimated null effect") %>%
+  mutate(null_test = ifelse(lower > 0, 1, 0),
+         hdi_estimation = ifelse(lower < true_effect & upper > true_effect, 1, 0),
+         rope_test = ifelse(lower > (rope_half_width*-1) & upper < rope_half_width, 1, 0)) %>% 
+  group_by(true_effect) %>%
+  summarise(mean_estimate   = round(mean(estimate), 2),
+            sd_estimate     = round(sd(estimate), 2),
+            power_null_test = mean(null_test),
+            power_rope_test = mean(rope_test),
+            power_esimation = mean(hdi_estimation)) %>%
+  arrange(desc(true_effect)) %>%
   kable() %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
 
@@ -674,7 +717,7 @@ This is slightly suboptimal as a Bayesian power analysis would be better, but si
 
 ```{r}
 
-ROPE_cutoff <- 0.16
+ROPE_cutoff <- 0.20
 
 # solutions from https://mjskay.github.io/tidybayes/articles/tidy-brms.html
 
@@ -752,16 +795,16 @@ results_posterior <-
     
   ) %>%
   rownames_to_column(var = "parameter") %>%
-      rename(delta = Estimate,
-             error = Est.Error,
-             hdi_lower = Q2.5,
-             hdi_upper = Q97.5) %>%
+  rename(delta = Estimate,
+         error = Est.Error,
+         hdi_lower = Q2.5,
+         hdi_upper = Q97.5) %>%
   mutate(delta_and_hdi = paste0(bquote(.(format(round(delta, 2), nsmall = 2))), 
-                                    " [", 
-                                    bquote(.(format(round(hdi_lower, 2), nsmall = 2))),
-                                    ", ", 
-                                    bquote(.(format(round(hdi_upper, 2), nsmall = 2))),
-                                    "]"),
+                                " [", 
+                                bquote(.(format(round(hdi_lower, 2), nsmall = 2))),
+                                ", ", 
+                                bquote(.(format(round(hdi_upper, 2), nsmall = 2))),
+                                "]"),
          prior = as.factor(paste(prior_certainty, prior_effect)),
          prior = fct_relevel(prior, 
                              "Well-estimated null effect", 
@@ -1014,16 +1057,16 @@ results_posterior_confirmatory <-
     
   ) %>%
   rownames_to_column(var = "parameter") %>%
-      rename(delta = Estimate,
-             error = Est.Error,
-             hdi_lower = Q2.5,
-             hdi_upper = Q97.5) %>%
+  rename(delta = Estimate,
+         error = Est.Error,
+         hdi_lower = Q2.5,
+         hdi_upper = Q97.5) %>%
   mutate(delta_and_hdi = paste0(bquote(.(format(round(delta, 2), nsmall = 2))), 
-                                    " [", 
-                                    bquote(.(format(round(hdi_lower, 2), nsmall = 2))),
-                                    ", ", 
-                                    bquote(.(format(round(hdi_upper, 2), nsmall = 2))),
-                                    "]"),
+                                " [", 
+                                bquote(.(format(round(hdi_lower, 2), nsmall = 2))),
+                                ", ", 
+                                bquote(.(format(round(hdi_upper, 2), nsmall = 2))),
+                                "]"),
          prior = as.factor(paste(prior_certainty, prior_effect)),
          prior = fct_relevel(prior, 
                              "Well-estimated null effect", 
