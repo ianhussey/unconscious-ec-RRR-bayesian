@@ -1,0 +1,1128 @@
+---
+title: "Unconscious EC RRR"
+subtitle: "The influence of prior beliefs on conclusions"
+author: "Ian Hussey^[Ghent University. Email: ian.hussey@ugent.be]"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    number_sections: no
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, 
+                      warning = FALSE)
+
+# options
+options(knitr.table.format = "html") # necessary configuration of tables
+
+# disable scientific notation
+options(scipen = 999) 
+
+```
+
+# Data, dependencies & functions
+
+```{r}
+
+# Dependencies ----
+
+library(MASS)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(MAd)
+library(weightr)
+library(brms)
+library(parallel)
+library(timesavers)
+library(bayestestR)
+library(patchwork)
+library(tidybayes)
+library(sjPlot)
+library(broom)
+
+# Data ----
+
+# data from pubished studies 
+
+## Miguel's code for effect aggregation, used for consistency:
+
+# read the file:
+data_published <- read.csv("../../unconscious-ec-RRR/meta analysis of previous studies/data/meta-analysis_exclude_awere.csv")
+
+data_identifiers <- data_published %>%
+  mutate(identifier = paste(paper, compid)) %>%
+  distinct(identifier)
+
+data_published_aggregated <- data_published %>%
+  agg(id = compid, 
+      es = g, 
+      var = var.g, 
+      cor = 0.5,
+      method = "BHHR",
+      data = .) %>%
+  bind_cols(data_identifiers) %>%
+  mutate(study = identifier,
+         hedges_g = es,
+         hedges_g_se = sqrt(var)) %>%
+  dplyr::select(study, hedges_g, hedges_g_se)
+
+
+# data from rrr
+
+data_rrr_participant_level <- read.csv("../../unconscious-ec-RRR/data/processed/data_processed.csv") %>%
+  rename(DV = sum_score_evaluation_CSpos_preferred) %>%
+  mutate(exclude_all_four_combined = ifelse(exclude_aware_olsen_and_fazio +
+                                              exclude_aware_olsen_and_fazio_modified +
+                                              exclude_awareness_baranan_dehouwer_nosek +
+                                              exclude_awareness_baranan_dehouwer_nosek_modified > 0, 1, 0)) %>%
+  filter(exclude_surveillance == FALSE & 
+           simulated_data == FALSE & 
+           exclude_all_four_combined == FALSE) %>%
+  mutate(data_collection_site = dplyr::recode(data_collection_site,
+                                              "Balas and Sarzynnska" = "Balas",
+                                              "Corneille and Mierop" = "Mierop",
+                                              "Gast Richter and Benedict" = "Gast",
+                                              "Gawronski" = "Gawronski",
+                                              "Hutter" = "Hütter",
+                                              "Kurdi and Ferguson" = "Kurdi",
+                                              "Moran Hussey and Hughes" = "Moran",
+                                              "Olsen and Fritzlen" = "Olson",
+                                              "Smith and Douglas" = "Douglas",
+                                              "Stahl Bading Aust Heycke and Thomasius" = "Stahl",
+                                              "Unkelbach and Hogden" = "Unkelbach",
+                                              "Vadillo" = "Vadillo")) %>%
+  dplyr::select(data_collection_site,
+                DV,
+                condition) 
+
+data_rrr_site_level <- data_rrr_participant_level %>%
+  group_by(data_collection_site) %>%
+  dplyr::summarize(preference_mean = mean(DV),
+                   preference_sd = sd(DV),
+                   preference_n = n()) %>%
+  # must have greater than N=2 per site to calculate SD etc
+  filter(preference_n > 2) %>%
+  # calculate h and its SE
+  dplyr::mutate(preference_cohens_dz = preference_mean/preference_sd,
+                cohens_dz_V = ((preference_n*2)/(preference_n^2)) +
+                  ((preference_cohens_dz^2) / (preference_n*4)),
+                J = 1 - (3/(4*(preference_n-1)-1)),
+                hedges_g = preference_cohens_dz * J,
+                hedges_g_V = J^2 * cohens_dz_V,
+                hedges_g_se = sqrt(hedges_g_V)) %>%
+  ungroup() %>%
+  dplyr::select(data_collection_site, hedges_g, hedges_g_se)
+
+```
+
+# Creating priors using posteriors from published literature
+
+## Meta analyis of published literature
+
+```{r}
+
+fit_published <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | study),
+      prior         = c(prior(normal(0, 1), class = b),
+                        prior(cauchy(0, 1), class = sd)),
+      family        = gaussian(),
+      data          = data_published_aggregated, 
+      iter          = 6000,
+      control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_published")
+
+tab_model(fit_published)
+
+```
+
+```{r}
+
+posterior_published_literature <- 
+  fit_published %>%
+  posterior_samples() %>%
+  dplyr::select(b_Intercept, sd_study__Intercept)
+
+ggplot(posterior_published_literature, aes(sd_study__Intercept)) +
+  geom_density()
+
+ggplot(posterior_published_literature, aes(b_Intercept)) +
+  geom_density()
+
+fitdistr(posterior_published_literature$b_Intercept,"normal")
+
+# sigma will use cauchy distribution with scaling factor = mean of posterior sigma. i.e., 50% chance that it will fall within 0 < scaling factor
+mean(posterior_published_literature$sd_study__Intercept)
+
+```
+
+## Meta analysis with publicaiton bias correction method
+
+Posterior of Egger method bias corrected meta Miguel reported as prior for RRR meta, i.e., entering SE as a covariate.
+
+```{r}
+
+fit_published_egger <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + hedges_g_se + (1 | study),
+      prior         = c(prior(normal(0, 1), class = b),
+                        prior(cauchy(0, 1), class = sd)),
+      family        = gaussian(),
+      data          = data_published_aggregated, 
+      iter          = 6000,
+      control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_published_egger")
+
+tab_model(fit_published_egger)
+
+```
+
+```{r}
+
+posterior_published_literature_egger <- 
+  fit_published_egger %>%
+  posterior_samples() %>%
+  dplyr::select(b_Intercept, sd_study__Intercept)
+
+ggplot(posterior_published_literature_egger, aes(sd_study__Intercept)) +
+  geom_density()
+
+ggplot(posterior_published_literature_egger, aes(b_Intercept)) +
+  geom_density()
+
+fitdistr(posterior_published_literature_egger$b_Intercept,"normal")
+
+# sigma will use cauchy distribution with scaling factor = mean of posterior sigma. i.e., 50% chance that it will fall within 0 < scaling factor
+mean(posterior_published_literature_egger$sd_study__Intercept)
+
+```
+
+## Priors
+
+NB all use Sigma = cauchy(location = 0.00, scaling = 0.50) for the sd of the random effect for site.
+
+```{r}
+
+read.csv("priors.csv") %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+p_priors <-
+  ggplot(data = data.frame(x = c(-3, 3)), aes(x)) +
+  stat_function(fun = dnorm, n = 1001, 
+                args = list(mean = 0.2, sd = 0.05), 
+                size = 0.6,
+                aes(color = "1. Well-estimated real effect", 
+                    linetype = "1. Well-estimated real effect")) + 
+  stat_function(fun = dnorm, n = 1001, 
+                args = list(mean = 0.2, sd = 0.25), 
+                size = 0.6,
+                aes(color = "2. Poorly-estimated real effect", 
+                    linetype = "2. Poorly-estimated real effect")) + 
+  stat_function(fun = dnorm, n = 1001, 
+                args = list(mean = 0.0, sd = 0.05), 
+                size = 0.6,
+                aes(color = "3. Well-estimated null effect", 
+                    linetype = "3. Well-estimated null effect")) + 
+  stat_function(fun = dnorm, n = 1001, 
+                args = list(mean = 0.0, sd = 0.25), 
+                size = 0.6,
+                aes(color = "4. Poorly-estimated null effect", 
+                    linetype = "4. Poorly-estimated null effect")) + 
+  scale_colour_brewer(type = "qual", palette = 6) +
+  ylab("Probability density") +
+  xlab(bquote("Prior effect size" ~ delta)) +
+  coord_cartesian(xlim = c(-0.6, 0.6)) + 
+  labs(color = "Prior", linetype = "Prior") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) 
+
+p_priors
+
+```
+
+# Power analyses via simulation studies
+
+## Setup
+
+```{r}
+
+# function to simulate data
+simulate_data <- function(effect_size, k_sites, n_per_site, between_site_variation) {
+  
+  data_sim <- 
+    # simulate participant level data
+    data.frame(sim_participant_id = 1:(n_per_site*k_sites), 
+               DV = rnorm((n_per_site*k_sites), mean = effect_size, sd = 1)) %>%
+    mutate(data_collection_site = paste0("site_", ((sim_participant_id-1) %/% n_per_site) + 1)) %>%
+    # create site level summary scores
+    group_by(data_collection_site) %>%
+    dplyr::summarize(preference_mean = mean(DV),
+                     preference_sd = sd(DV),
+                     preference_n = n()) %>%
+    # calculate h and its SE
+    dplyr::mutate(preference_cohens_dz = preference_mean/preference_sd,
+                  cohens_dz_V = ((preference_n*2)/(preference_n^2)) +
+                    ((preference_cohens_dz^2) / (preference_n*4)),
+                  J = 1 - (3/(4*(preference_n-1)-1)),
+                  hedges_g = preference_cohens_dz * J,
+                  hedges_g_V = J^2 * cohens_dz_V,
+                  hedges_g_se = sqrt(hedges_g_V)) %>%
+    ungroup() %>%
+    dplyr::select(data_collection_site, hedges_g, hedges_g_se) %>%
+    # stimulate between site variation
+    rowwise() %>%
+    mutate(site_variation = rnorm(n = 1, mean = 0, sd = between_site_variation),
+           hedges_g = hedges_g + site_variation) %>%
+    ungroup()
+  
+  return(data_sim)
+  
+}
+
+# function to upated models with newly simulated data
+simulation_iteration <- function(seed, data, fitted_model, effect_size, ...) {
+  
+  # progress bar
+  pb$tick()$print()
+  
+  # set seed
+  set.seed(seed)
+  
+  # simulate data
+  data_sim <- simulate_data(effect_size            = effect_size,
+                            k_sites                = k_sites,
+                            n_per_site             = n_per_site,
+                            between_site_variation = between_site_variation)
+  
+  # fit model
+  fit <- 
+    update(fitted_model,
+           newdata = data_sim, 
+           seed    = seed) %>% 
+    tidy(prob = .95) %>% 
+    filter(term == "b_Intercept")
+  
+  return(fit)
+  
+}
+
+
+# parameters
+k_sites                <- pull(count(data_rrr_site_level)) 
+n_per_site             <- pull(round(count(data_rrr_participant_level)/k_sites, 0))
+true_effect_size       <- 0.17  # started with 0.16, from frequentist power analysis
+between_site_variation <- 0.10  # rounded down from meta of existing literature, given RRR's stardardized methods 
+n_sim                  <- 2
+
+
+# fit archetypal model fits, which will be updated with new data in each sim
+fit_good_real_sim_archetype <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
+      prior         = c(prior(normal(0.20, 0.05), class = b),
+                        prior(cauchy(0.00, 0.25), class = sd)),
+      family        = gaussian(),
+      data          = simulate_data(effect_size            = true_effect_size,
+                                    k_sites                = k_sites,
+                                    n_per_site             = n_per_site,
+                                    between_site_variation = between_site_variation), 
+      seed          = 1,
+      #iter          = 6000,
+      #control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_good_real_sim_archetype")
+
+fit_poor_real_sim_archetype <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
+      prior         = c(prior(normal(0.20, 1.00), class = b),
+                        prior(cauchy(0.00, 0.25), class = sd)),
+      family        = gaussian(),
+      data          = simulate_data(effect_size            = true_effect_size,
+                                    k_sites                = k_sites,
+                                    n_per_site             = n_per_site,
+                                    between_site_variation = between_site_variation), 
+      seed          = 1,
+      #iter          = 6000,
+      #control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_poor_real_sim_archetype")
+
+fit_poor_null_sim_archetype <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
+      prior         = c(prior(normal(0.00, 1.00), class = b),
+                        prior(cauchy(0.00, 0.25), class = sd)),
+      family        = gaussian(),
+      data          = simulate_data(effect_size            = true_effect_size,
+                                    k_sites                = k_sites,
+                                    n_per_site             = n_per_site,
+                                    between_site_variation = between_site_variation), 
+      seed          = 1,
+      #iter          = 6000,
+      #control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_poor_null_sim_archetype")
+
+fit_good_null_sim_archetype <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
+      prior         = c(prior(normal(0.00, 0.05), class = b),
+                        prior(cauchy(0.00, 0.25), class = sd)),
+      family        = gaussian(),
+      data          = simulate_data(effect_size            = true_effect_size,
+                                    k_sites                = k_sites,
+                                    n_per_site             = n_per_site,
+                                    between_site_variation = between_site_variation), 
+      seed          = 1,
+      #iter          = 6000,
+      #control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_good_null_sim_archetype")
+
+```
+
+## Run  
+
+```{r message=FALSE, warning=FALSE}
+
+if(file.exists("models/simulations_real.RData")){
+  
+  load("models/simulations_real.RData")
+  
+} else {
+  
+  # reset progress bar
+  pb <- progress_estimated(n_sim*8)
+  
+  # run simulation
+  time_start <- Sys.time()
+  
+  ## simulations for detecting a true effect
+  simulation_good_real <-
+    tibble(seed = 1:n_sim) %>% 
+    mutate(tidy = map(seed, simulation_iteration, 
+                      effect_size            = true_effect_size,
+                      fitted_model           = fit_good_real_sim_archetype,
+                      k_sites                = k_sites,
+                      n_per_site             = n_per_site,
+                      between_site_variation = between_site_variation)) %>% 
+    unnest(tidy) %>%
+    mutate(true_effect = true_effect_size,
+           prior = "Well-estimated real effect")
+
+  simulation_poor_real <-
+    tibble(seed = 1:n_sim) %>% 
+    mutate(tidy = map(seed, simulation_iteration, 
+                      effect_size            = true_effect_size,
+                      fitted_model           = fit_poor_real_sim_archetype,
+                      k_sites                = k_sites,
+                      n_per_site             = n_per_site,
+                      between_site_variation = between_site_variation)) %>% 
+    unnest(tidy) %>%
+    mutate(true_effect = true_effect_size,
+           prior = "Poorly-estimated real effect")
+  
+  simulation_poor_null <-
+    tibble(seed = 1:n_sim) %>% 
+    mutate(tidy = map(seed, simulation_iteration, 
+                      effect_size            = true_effect_size,
+                      fitted_model           = fit_poor_null_sim_archetype,
+                      k_sites                = k_sites,
+                      n_per_site             = n_per_site,
+                      between_site_variation = between_site_variation)) %>% 
+    unnest(tidy) %>%
+    mutate(true_effect = true_effect_size,
+           prior = "Poorly-estimated null effect")
+  
+  simulation_good_null <-
+    tibble(seed = 1:n_sim) %>% 
+    mutate(true_effect = true_effect_size,
+           tidy = map(seed, simulation_iteration, 
+                      effect_size            = true_effect_size,
+                      fitted_model           = fit_good_null_sim_archetype,
+                      k_sites                = k_sites,
+                      n_per_site             = n_per_site,
+                      between_site_variation = between_site_variation)) %>% 
+    unnest(tidy) %>%
+    mutate(true_effect = true_effect_size,
+           prior = "Well-estimated null effect")
+  
+  ## simulations for detecting a null effect
+  simulation_truenull_good_real <-
+    tibble(seed = 1:n_sim) %>% 
+    mutate(tidy = map(seed, simulation_iteration, 
+                      effect_size            = 0,
+                      fitted_model           = fit_good_real_sim_archetype,
+                      k_sites                = k_sites,
+                      n_per_site             = n_per_site,
+                      between_site_variation = between_site_variation)) %>% 
+    unnest(tidy) %>%
+    mutate(true_effect = 0,
+           prior = "Well-estimated real effect")
+  
+  simulation_truenull_poor_real <-
+    tibble(seed = 1:n_sim) %>% 
+    mutate(tidy = map(seed, simulation_iteration, 
+                      effect_size            = 0,
+                      fitted_model           = fit_poor_real_sim_archetype,
+                      k_sites                = k_sites,
+                      n_per_site             = n_per_site,
+                      between_site_variation = between_site_variation)) %>% 
+    unnest(tidy) %>%
+    mutate(true_effect = 0,
+           prior = "Poorly-estimated real effect")
+  
+  simulation_truenull_poor_null <-
+    tibble(seed = 1:n_sim) %>% 
+    mutate(tidy = map(seed, simulation_iteration, 
+                      effect_size            = 0,
+                      fitted_model           = fit_poor_null_sim_archetype,
+                      k_sites                = k_sites,
+                      n_per_site             = n_per_site,
+                      between_site_variation = between_site_variation)) %>% 
+    unnest(tidy) %>%
+    mutate(true_effect = 0,
+           prior = "Poorly-estimated null effect")
+  
+  simulation_truenull_good_null <-
+    tibble(seed = 1:n_sim) %>% 
+    mutate(true_effect = true_effect_size,
+           tidy = map(seed, simulation_iteration, 
+                      effect_size            = 0,
+                      fitted_model           = fit_good_null_sim_archetype,
+                      k_sites                = k_sites,
+                      n_per_site             = n_per_site,
+                      between_site_variation = between_site_variation)) %>% 
+    unnest(tidy) %>%
+    mutate(true_effect = 0,
+           prior = "Well-estimated null effect")
+  
+  time_end <- Sys.time()
+  
+  simulations <- list(results = bind_rows(simulation_good_real,
+                                          simulation_poor_real,
+                                          simulation_poor_null,
+                                          simulation_good_null,
+                                          simulation_truenull_good_real,
+                                          simulation_truenull_poor_real,
+                                          simulation_truenull_poor_null,
+                                          simulation_truenull_good_null),
+                      time = time_end - time_start)
+  
+  save(simulations, file = "models/simulations.RData")
+  
+}
+
+```
+
+## Summarize sims
+
+```{r fig.height=9, fig.width=7}
+
+# simulation time
+simulations$time
+
+# plot
+simulations_real$results %>% 
+  mutate(seed = fct_reorder(as.factor(seed), estimate),
+         true_effect_string = paste("True effect =", true_effect),
+         prior_string = paste("Prior:", prior)) %>%
+  arrange(seed) %>%
+  rownames_to_column(var = "rowname") %>%
+  mutate(rowname = as.numeric(as.character(rowname))) %>%
+  ggplot(aes(x = rowname, y = estimate, ymin = lower, ymax = upper)) +
+  facet_wrap(~ true_effect_string + prior_string, ncol = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = true_effect_size, linetype = "dashed", color = "darkgreen") +
+  geom_pointrange(fatten = 1/2) +
+  labs(x = "Simulations iterations",
+       y = expression(delta)) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+# table
+simulations_real$results %>% 
+  mutate(null_test = ifelse(lower > 0, 1, 0),
+         hdi_estimation = ifelse(lower < true_effect_size & upper > true_effect_size, 1, 0)) %>% 
+  group_by(true_effect, prior) %>%
+  summarise(mean_estimate   = round(mean(estimate), 2),
+            sd_estimate     = round(sd(estimate), 2),
+            power_null_test = mean(null_test),
+            power_esimation = mean(hdi_estimation)) %>%
+  mutate(prior = fct_relevel(prior,
+                             "Well-estimated real effect",
+                             "Poorly-estimated real effect",
+                             "Poorly-estimated null effect",
+                             "Well-estimated null effect")) %>%
+  arrange(desc(true_effect), prior) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+```
+
+# Analyses of RRR data
+
+## Compound exclusion criterion
+
+### Fit
+
+```{r}
+
+### Well-estimated real effect
+fit_good_real <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
+      prior         = c(prior(normal(0.20, 0.05), class = b),
+                        prior(cauchy(0.00, 0.50), class = sd)), 
+      family        = gaussian(),
+      data          = data_rrr_site_level,
+      iter          = 6000,
+      control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_good_real")
+
+#summary(fit_good_real)
+
+
+### Poorly-estimated real effect
+fit_poor_real <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
+      prior         = c(prior(normal(0.20, 1.00), class = b),
+                        prior(cauchy(0.00, 0.25), class = sd)),
+      family        = gaussian(),
+      data          = data_rrr_site_level, 
+      iter          = 6000,
+      control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_poor_real")
+
+#summary(fit_poor_real)
+
+
+### Poorly-estimated null effect
+fit_poor_null <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
+      prior         = c(prior(normal(0.00, 1.00), class = b),
+                        prior(cauchy(0.00, 0.25), class = sd)),
+      family        = gaussian(),
+      data          = data_rrr_site_level, 
+      iter          = 6000,
+      control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_poor_null")
+
+#summary(fit_poor_null)
+
+
+### Well-estimated null effect
+fit_good_null <- 
+  brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
+      prior         = c(prior(normal(0.00, 0.05), class = b),
+                        prior(cauchy(0.00, 0.50), class = sd)),
+      family        = gaussian(),
+      data          = data_rrr_site_level, 
+      iter          = 6000,
+      control       = list(adapt_delta = 0.95),
+      cores         = parallel::detectCores(), 
+      chains        = 4,
+      save_all_pars = TRUE,
+      sample_prior  = TRUE,
+      file          = "models/fit_good_null")
+
+#summary(fit_good_null)
+
+```
+
+### Plots 
+
+I use ROPE = c(-0.16, 0.16) on the basis that a frequentist power analysis for meta analysis models demonstrated that our available sample size has 80% power to detect effect >= 0.16. I.e., agnostic to whether the effect is real or null, this is the estimation width we have 80% power to detect. 
+
+This is slightly suboptimal as a Bayesian power analysis would be better, but simulating such multilevel data is non-trivial. There are working [examples](https://solomonkurz.netlify.com/post/bayesian-power-analysis-part-i/) for much simpler fixed effects only models however.
+
+```{r}
+
+ROPE_cutoff <- 0.16
+
+# solutions from https://mjskay.github.io/tidybayes/articles/tidy-brms.html
+
+p_results <- 
+  bind_rows(
+    mutate(spread_draws(fit_good_real, b_Intercept), prior = "Well-estimated real effect"), 
+    mutate(spread_draws(fit_poor_real, b_Intercept), prior = "Poorly-estimated real effect"),
+    mutate(spread_draws(fit_poor_null, b_Intercept), prior = "Poorly-estimated null effect"),
+    mutate(spread_draws(fit_good_null, b_Intercept), prior = "Well-estimated null effect")
+  ) %>%
+  mutate(prior = fct_relevel(prior,
+                             "Well-estimated null effect",
+                             "Poorly-estimated null effect",
+                             "Poorly-estimated real effect",
+                             "Well-estimated real effect")) %>%
+  ggplot(aes(y = prior, x = b_Intercept, fill = stat(x > 0))) +
+  annotate("rect",
+           ymin  = -Inf, 
+           ymax  = +Inf, 
+           xmin  = ROPE_cutoff*-1,
+           xmax  = ROPE_cutoff,
+           alpha = +0.2) +
+  geom_vline(xintercept = 0, color = "darkgrey") +
+  stat_halfeyeh(.width = c(0.66, 0.95), alpha = 0.8) +
+  #scale_fill_manual(values = c("gray80", "skyblue")) +
+  scale_fill_viridis_d(begin = 0.4, end = 0.6) +
+  xlab(bquote("Posterior effect size" ~ delta)) +
+  ylab("Prior belief") +
+  labs(fill = "Effect > 0") +
+  theme_minimal()
+
+p_results
+
+```
+
+NB 66% and 95% HDIs. ROPE was $\delta$ = `r ROPE_cutoff*-1` to `r ROPE_cutoff`.
+
+### Table
+
+```{r}
+
+# solutions from 
+# https://cran.r-project.org/web/packages/bayestestR/vignettes/credible_interval.html
+# https://rdrr.io/cran/bayestestR/f/vignettes/probability_of_direction.Rmd
+
+# Estimates
+
+results_posterior <- 
+  
+  bind_rows(
+    
+    fit_good_real %>%
+      posterior_summary(pars = "b_Intercept") %>%
+      as.data.frame() %>%
+      mutate(prior_certainty = "Well-estimated", 
+             prior_effect = "real effect"),
+    
+    fit_poor_real %>%
+      posterior_summary(pars = "b_Intercept") %>%
+      as.data.frame() %>%
+      mutate(prior_certainty = "Poorly-estimated", 
+             prior_effect = "real effect"),
+    
+    fit_poor_null %>%
+      posterior_summary(pars = "b_Intercept") %>%
+      as.data.frame() %>%
+      mutate(prior_certainty = "Poorly-estimated", 
+             prior_effect = "null effect"),
+    
+    fit_good_null %>%
+      posterior_summary(pars = "b_Intercept") %>%
+      as.data.frame() %>%
+      mutate(prior_certainty = "Well-estimated", 
+             prior_effect = "null effect")
+    
+  ) %>%
+  rownames_to_column(var = "parameter") %>%
+      rename(delta = Estimate,
+             error = Est.Error,
+             hdi_lower = Q2.5,
+             hdi_upper = Q97.5) %>%
+  mutate(delta_and_hdi = paste0(bquote(.(format(round(delta, 2), nsmall = 2))), 
+                                    " [", 
+                                    bquote(.(format(round(hdi_lower, 2), nsmall = 2))),
+                                    ", ", 
+                                    bquote(.(format(round(hdi_upper, 2), nsmall = 2))),
+                                    "]"),
+         prior = as.factor(paste(prior_certainty, prior_effect)),
+         prior = fct_relevel(prior, 
+                             "Well-estimated null effect", 
+                             "Poorly-estimated null effect",
+                             "Poorly-estimated real effect", 
+                             "Well-estimated real effect")) %>%
+  dplyr::select(prior, delta, hdi_lower, hdi_upper, error, delta_and_hdi) %>%
+  round_df(2)
+
+
+# Equivalence test via Krushke method
+
+results_rope <- 
+  bind_rows(
+    mutate(bayestestR::equivalence_test(posterior_samples(fit_good_real)$b_Intercept, 
+                                        ci = 0.95,
+                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        ci_method = "HDI"),
+           prior = "Well-estimated real effect"),
+    
+    mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_real)$b_Intercept, 
+                                        ci = 0.95,
+                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        ci_method = "HDI"),
+           prior = "Poorly-estimated real effect"),
+    
+    mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_null)$b_Intercept, 
+                                        ci = 0.95,
+                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        ci_method = "HDI"),
+           prior = "Poorly-estimated null effect"),
+    
+    mutate(bayestestR::equivalence_test(posterior_samples(fit_good_null)$b_Intercept, 
+                                        ci = 0.95,
+                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        ci_method = "HDI"),
+           prior = "Well-estimated null effect")
+  ) %>%
+  mutate(p_in_rope = ROPE_Percentage) %>%
+  dplyr::select(prior, p_in_rope) %>%
+  round_df(5)
+
+# is the posterior effect size greater than zero?
+results_p_greater_zero <- 
+  bind_rows(
+    mutate(p_direction(fit_good_real), prior = "Well-estimated real effect"),
+    mutate(p_direction(fit_poor_real), prior = "Poorly-estimated real effect"),
+    mutate(p_direction(fit_poor_null), prior = "Poorly-estimated null effect"),
+    mutate(p_direction(fit_good_null), prior = "Well-estimated null effect")
+  ) %>%
+  mutate(p_greater_zero = 1 - pd) %>%
+  dplyr::select(prior, p_greater_zero) %>%
+  round_df(5)
+
+# is the posterior effect size smaller than the published literature?
+results_p_less_lit <- 
+  bind_rows(
+    mutate(hypothesis(fit_good_real, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
+           prior = "Well-estimated real effect"),
+    mutate(hypothesis(fit_poor_real, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
+           prior = "Poorly-estimated real effect"),
+    mutate(hypothesis(fit_poor_null, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
+           prior = "Poorly-estimated null effect"),
+    mutate(hypothesis(fit_good_null, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
+           prior = "Well-estimated null effect")
+  ) %>%
+  mutate(p_less_lit = 1 - Post.Prob) %>%
+  select(prior, p_less_lit) %>%
+  round_df(5)
+
+# is the posterior effect size smaller than the original study we replicate?
+results_p_less_orig <- 
+  bind_rows(
+    mutate(hypothesis(fit_good_real, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
+           prior = "Well-estimated real effect"),
+    mutate(hypothesis(fit_poor_real, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
+           prior = "Poorly-estimated real effect"),
+    mutate(hypothesis(fit_poor_null, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
+           prior = "Poorly-estimated null effect"),
+    mutate(hypothesis(fit_good_null, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
+           prior = "Well-estimated null effect")
+  ) %>%
+  mutate(p_less_orig = 1 - Post.Prob) %>%
+  select(prior, p_less_orig) %>%
+  round_df(5)
+
+
+# combined
+results <- results_posterior %>%
+  left_join(results_rope, by = "prior") %>%
+  left_join(results_p_greater_zero, by = "prior") %>%
+  left_join(results_p_less_lit, by = "prior") %>%
+  left_join(results_p_less_orig, by = "prior")
+
+# table
+results %>%
+  rowwise() %>%
+  dplyr::select(prior, delta_and_hdi, p_greater_zero, p_in_rope, p_less_lit, p_less_orig) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+```
+
+### Conclusions
+
+- Conclusions reached on the basis of the data do indeed depend on prior beliefs. 
+- Using 95% HDIs and/or Bayesian *p* values (i.e., 1-posterior probability of direction), the data plus a prior belief in a well-estimated true effect produced a posterior belief that was credibly different from zero. The other three priors did not give rise to a credible posterior effect, and indeed all gave rise to an effect that was 100% within the region of practical equivalence with zero. As such, differences in priors gave rise to differences not only with regard to the support for H1, but also the support for H0: three priors not only fail to find evidence for H1 but find support for H0. 
+- Critically, however, the prior belief that there is a true effect (i.e., belief in the unaware EC hypothesis) was not sufficent to the posterior belief in the hypothesis: the combination of a prior belief in the effect *and* specificity in its estimation (i.e., relative confidence in the effect size range) was required for a posterior belief in the effect.  
+
+- The analyses in Moran et al are null hypothesis tests: is the effect greater than zero. 
+- Bayesian versions of this show mixed evidence that is sensitive to choice of prior.
+- It is also meaningful to ask is the effect greater or smaller than the ES in the published literature. 
+- Results are a more conclusive yes: Belief in the effect being non zero may be dependant on choice of prior (i.e., only a very strong prior belief in the effect being true allows posterior belief to persist), but posterior belief that the effect is substantially smaller than that found in the published literature is independant of prior. 
+- As such, results give some small room to continue to believe in the effect if your prior beliefs are very strong, but they leave no doubt that effects are lower than in the published literature. 
+
+## Olson & Fazio exclusion criterion
+
+### Fit
+
+```{r}
+
+data_rrr_site_level_confirmatory <- 
+  read.csv("../../unconscious-ec-RRR/data/processed/data_processed.csv") %>%
+  mutate(data_collection_site = dplyr::recode(data_collection_site,
+                                              "Balas and Sarzynnska" = "Balas",
+                                              "Corneille and Mierop" = "Mierop",
+                                              "Gast Richter and Benedict" = "Gast",
+                                              "Gawronski" = "Gawronski",
+                                              "Hutter" = "Hütter",
+                                              "Kurdi and Ferguson" = "Kurdi",
+                                              "Moran Hussey and Hughes" = "Moran",
+                                              "Olsen and Fritzlen" = "Olson",
+                                              "Smith and Douglas" = "Douglas",
+                                              "Stahl Bading Aust Heycke and Thomasius" = "Stahl",
+                                              "Unkelbach and Hogden" = "Unkelbach",
+                                              "Vadillo" = "Vadillo")) %>%
+  filter(exclude_surveillance == FALSE & 
+           simulated_data == FALSE) %>%
+  rename(DV = sum_score_evaluation_CSpos_preferred) %>%
+  filter(exclude_aware_olsen_and_fazio == FALSE) %>%
+  dplyr::select(data_collection_site,
+                DV,
+                condition) %>%
+  group_by(data_collection_site) %>%
+  dplyr::summarize(preference_mean = mean(DV),
+                   preference_sd = sd(DV),
+                   preference_n = n()) %>%
+  # must have greater than N=2 per site to calculate SD etc
+  filter(preference_n > 2) %>%
+  # calculate h and its SE
+  dplyr::mutate(preference_cohens_dz = preference_mean/preference_sd,
+                cohens_dz_V = ((preference_n*2)/(preference_n^2)) +
+                  ((preference_cohens_dz^2) / (preference_n*4)),
+                J = 1 - (3/(4*(preference_n-1)-1)),
+                hedges_g = preference_cohens_dz * J,
+                hedges_g_V = J^2 * cohens_dz_V,
+                hedges_g_se = sqrt(hedges_g_V)) %>%
+  ungroup() %>%
+  dplyr::select(data_collection_site, hedges_g, hedges_g_se)
+
+fit_good_real_confirmatory <- update(fit_good_real, 
+                                     newdata = data_rrr_site_level_confirmatory, 
+                                     file = "models/fit_good_real_confirmatory")
+
+fit_poor_real_confirmatory <- update(fit_poor_real, 
+                                     newdata = data_rrr_site_level_confirmatory, 
+                                     file = "models/fit_poor_real_confirmatory")
+
+fit_good_null_confirmatory <- update(fit_good_null, 
+                                     newdata = data_rrr_site_level_confirmatory, 
+                                     file = "models/fit_good_null_confirmatory")
+
+fit_poor_null_confirmatory <- update(fit_poor_null, 
+                                     newdata = data_rrr_site_level_confirmatory, 
+                                     file = "models/fit_poor_null_confirmatory")
+
+```
+
+### Plots
+
+```{r}
+
+p_results_confirmatory <- 
+  bind_rows(
+    mutate(spread_draws(fit_good_real_confirmatory, b_Intercept), prior = "Well-estimated real effect"), 
+    mutate(spread_draws(fit_poor_real_confirmatory, b_Intercept), prior = "Poorly-estimated real effect"),
+    mutate(spread_draws(fit_poor_null_confirmatory, b_Intercept), prior = "Poorly-estimated null effect"),
+    mutate(spread_draws(fit_good_null_confirmatory, b_Intercept), prior = "Well-estimated null effect")
+  ) %>%
+  mutate(prior = fct_relevel(prior,
+                             "Well-estimated null effect",
+                             "Poorly-estimated null effect",
+                             "Poorly-estimated real effect",
+                             "Well-estimated real effect")) %>%
+  ggplot(aes(y = prior, x = b_Intercept, fill = stat(x > 0))) +
+  annotate("rect",
+           ymin  = -Inf, 
+           ymax  = +Inf, 
+           xmin  = ROPE_cutoff*-1,
+           xmax  = ROPE_cutoff,
+           alpha = +0.2) +
+  geom_vline(xintercept = 0, color = "darkgrey") +
+  stat_halfeyeh(.width = c(0.66, 0.95), alpha = 0.8) +
+  #scale_fill_manual(values = c("gray80", "skyblue")) +
+  scale_fill_viridis_d(begin = 0.4, end = 0.6) +
+  xlab(bquote("Posterior effect size" ~ delta)) +
+  ylab("Prior belief") +
+  labs(fill = "Effect > 0") +
+  theme_minimal()
+
+p_results_confirmatory
+
+```
+
+NB 66% and 95% HDIs. ROPE was $\delta$ = `r ROPE_cutoff*-1` to `r ROPE_cutoff`.
+
+### Table
+
+```{r}
+
+# Estimates
+
+results_posterior_confirmatory <- 
+  
+  bind_rows(
+    
+    fit_good_real_confirmatory %>%
+      posterior_summary(pars = "b_Intercept") %>%
+      as.data.frame() %>%
+      mutate(prior_certainty = "Well-estimated", 
+             prior_effect = "real effect"),
+    
+    fit_poor_real_confirmatory %>%
+      posterior_summary(pars = "b_Intercept") %>%
+      as.data.frame() %>%
+      mutate(prior_certainty = "Poorly-estimated", 
+             prior_effect = "real effect"),
+    
+    fit_poor_null_confirmatory %>%
+      posterior_summary(pars = "b_Intercept") %>%
+      as.data.frame() %>%
+      mutate(prior_certainty = "Poorly-estimated", 
+             prior_effect = "null effect"),
+    
+    fit_good_null_confirmatory %>%
+      posterior_summary(pars = "b_Intercept") %>%
+      as.data.frame() %>%
+      mutate(prior_certainty = "Well-estimated", 
+             prior_effect = "null effect")
+    
+  ) %>%
+  rownames_to_column(var = "parameter") %>%
+      rename(delta = Estimate,
+             error = Est.Error,
+             hdi_lower = Q2.5,
+             hdi_upper = Q97.5) %>%
+  mutate(delta_and_hdi = paste0(bquote(.(format(round(delta, 2), nsmall = 2))), 
+                                    " [", 
+                                    bquote(.(format(round(hdi_lower, 2), nsmall = 2))),
+                                    ", ", 
+                                    bquote(.(format(round(hdi_upper, 2), nsmall = 2))),
+                                    "]"),
+         prior = as.factor(paste(prior_certainty, prior_effect)),
+         prior = fct_relevel(prior, 
+                             "Well-estimated null effect", 
+                             "Poorly-estimated null effect",
+                             "Poorly-estimated real effect", 
+                             "Well-estimated real effect")) %>%
+  dplyr::select(prior, delta, hdi_lower, hdi_upper, error, delta_and_hdi) %>%
+  round_df(2)
+
+
+# Equivalence test via Krushke method
+
+results_rope_confirmatory <- 
+  bind_rows(
+    mutate(bayestestR::equivalence_test(posterior_samples(fit_good_real_confirmatory)$b_Intercept, 
+                                        ci = 0.95,
+                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        ci_method = "HDI"),
+           prior = "Well-estimated real effect"),
+    
+    mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_real_confirmatory)$b_Intercept, 
+                                        ci = 0.95,
+                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        ci_method = "HDI"),
+           prior = "Poorly-estimated real effect"),
+    
+    mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_null_confirmatory)$b_Intercept, 
+                                        ci = 0.95,
+                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        ci_method = "HDI"),
+           prior = "Poorly-estimated null effect"),
+    
+    mutate(bayestestR::equivalence_test(posterior_samples(fit_good_null_confirmatory)$b_Intercept, 
+                                        ci = 0.95,
+                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        ci_method = "HDI"),
+           prior = "Well-estimated null effect")
+  ) %>%
+  mutate(p_in_rope = ROPE_Percentage) %>%
+  dplyr::select(prior, p_in_rope) %>%
+  round_df(5)
+
+# is the posterior effect size greater than zero?
+results_p_greater_zero_confirmatory <- 
+  bind_rows(
+    mutate(p_direction(fit_good_real_confirmatory), prior = "Well-estimated real effect"),
+    mutate(p_direction(fit_poor_real_confirmatory), prior = "Poorly-estimated real effect"),
+    mutate(p_direction(fit_poor_null_confirmatory), prior = "Poorly-estimated null effect"),
+    mutate(p_direction(fit_good_null_confirmatory), prior = "Well-estimated null effect")
+  ) %>%
+  mutate(p_greater_zero = 1 - pd) %>%
+  dplyr::select(prior, p_greater_zero) %>%
+  round_df(5)
+
+# is the posterior effect size smaller than the published literature?
+results_p_less_lit_confirmatory <- 
+  bind_rows(
+    mutate(hypothesis(fit_good_real_confirmatory, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
+           prior = "Well-estimated real effect"),
+    mutate(hypothesis(fit_poor_real_confirmatory, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
+           prior = "Poorly-estimated real effect"),
+    mutate(hypothesis(fit_poor_null_confirmatory, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
+           prior = "Poorly-estimated null effect"),
+    mutate(hypothesis(fit_good_null_confirmatory, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
+           prior = "Well-estimated null effect")
+  ) %>%
+  mutate(p_less_lit = 1 - Post.Prob) %>%
+  select(prior, p_less_lit) %>%
+  round_df(5)
+
+# is the posterior effect size smaller than the original study we replicate?
+results_p_less_orig_confirmatory <- 
+  bind_rows(
+    mutate(hypothesis(fit_good_real_confirmatory, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
+           prior = "Well-estimated real effect"),
+    mutate(hypothesis(fit_poor_real_confirmatory, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
+           prior = "Poorly-estimated real effect"),
+    mutate(hypothesis(fit_poor_null_confirmatory, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
+           prior = "Poorly-estimated null effect"),
+    mutate(hypothesis(fit_good_null_confirmatory, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
+           prior = "Well-estimated null effect")
+  ) %>%
+  mutate(p_less_orig = 1 - Post.Prob) %>%
+  select(prior, p_less_orig) %>%
+  round_df(5)
+
+
+# combined
+results_confirmatory <- results_posterior_confirmatory %>%
+  left_join(results_rope_confirmatory, by = "prior") %>%
+  left_join(results_p_greater_zero_confirmatory, by = "prior") %>%
+  left_join(results_p_less_lit_confirmatory, by = "prior") %>%
+  left_join(results_p_less_orig_confirmatory, by = "prior")
+
+# table
+results_confirmatory %>%
+  rowwise() %>%
+  dplyr::select(prior, delta_and_hdi, p_greater_zero, p_in_rope, p_less_lit, p_less_orig) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+
+```
