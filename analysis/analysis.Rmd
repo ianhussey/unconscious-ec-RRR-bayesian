@@ -334,7 +334,7 @@ simulation_iteration <- function(seed, data, fitted_model, effect_size, ...) {
 k_sites                <- pull(count(data_rrr_site_level)) 
 n_per_site             <- pull(round(count(data_rrr_participant_level)/k_sites, 0))
 true_effect_size       <- 0.17  # started with 0.16, from frequentist power analysis
-rope_half_width        <- 0.20
+rope_half_width        <- true_effect_size
 between_site_variation <- 0.10  # rounded down from meta of existing literature, given RRR's stardardized methods its likely to be lower
 n_sim                  <- 300
 
@@ -573,9 +573,15 @@ simulations$results %>%
   mutate(rowname = as.numeric(as.character(rowname))) %>%
   ggplot(aes(x = rowname, y = estimate, ymin = lower, ymax = upper)) +
   facet_wrap(~ true_effect_string + prior_string, ncol = 2) +
+  annotate("rect",
+           xmin  = -Inf, 
+           xmax  = +Inf, 
+           ymin  = rope_half_width*-1,
+           ymax  = rope_half_width,
+           alpha = +0.2) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
   geom_hline(aes(yintercept = true_effect), linetype = "dashed", color = "darkgreen") +
-  geom_pointrange(fatten = 1/2) +
+  geom_pointrange(fatten = 0.5, alpha = 0.7) +
   labs(x = "Simulation iterations",
        y = expression(delta)) +
   theme(axis.text.x = element_blank(),
@@ -591,9 +597,15 @@ simulations$results %>%
   mutate(rowname = as.numeric(as.character(rowname))) %>%
   ggplot(aes(x = rowname, y = estimate, ymin = lower, ymax = upper)) +
   facet_wrap(~ true_effect_string, ncol = 1) +
+  annotate("rect",
+           xmin  = -Inf, 
+           xmax  = +Inf, 
+           ymin  = rope_half_width*-1,
+           ymax  = rope_half_width,
+           alpha = +0.2) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
   geom_hline(aes(yintercept = true_effect), linetype = "dashed", color = "darkgreen") +
-  geom_pointrange(fatten = 1/2) +
+  geom_pointrange(fatten = 0.5, alpha = 0.7) +
   labs(x = "Simulation iterations",
        y = expression(delta)) +
   theme(axis.text.x = element_blank(),
@@ -638,9 +650,9 @@ simulations$results %>%
 
 # Analyses of RRR data
 
-## Compound exclusion criterion
+Using compound exclusion criterion
 
-### Fit
+## Fit
 
 ```{r}
 
@@ -717,7 +729,7 @@ fit_good_null <-
 
 ```
 
-### Plots 
+## Plots 
 
 ```{r}
 
@@ -757,7 +769,7 @@ p_results
 
 NB 66% and 95% HDIs. ROPE was $\delta$ = `r rope_half_width*-1` to `r rope_half_width`.
 
-### Table
+## Table
 
 ```{r}
 
@@ -910,11 +922,14 @@ results %>%
 
 ```
 
-### Conclusions
+# Conclusions
 
 - Conclusions reached on the basis of the data do indeed depend on prior beliefs. 
 - Using 95% HDIs and/or Bayesian *p* values (i.e., 1-posterior probability of direction), the data plus a prior belief in a well-estimated true effect produced a posterior belief that was credibly different from zero. The other three priors did not give rise to a credible posterior effect, and indeed all gave rise to an effect that was 100% within the region of practical equivalence with zero. As such, differences in priors gave rise to differences not only with regard to the support for H1, but also the support for H0: three priors not only fail to find evidence for H1 but find support for H0. 
 - Critically, however, the prior belief that there is a true effect (i.e., belief in the unaware EC hypothesis) was not sufficent to the posterior belief in the hypothesis: the combination of a prior belief in the effect *and* specificity in its estimation (i.e., relative confidence in the effect size range) was required for a posterior belief in the effect.  
+
+- If you believe the results of the meta analysis of published literature, this replication study does not contain enough data to change your mind. 
+- Equally, if you strongly disbelieve the effect is real, this replication does not contain enough data to change your mind.
 
 - The analyses in Moran et al are null hypothesis tests: is the effect greater than zero. 
 - Bayesian versions of this show mixed evidence that is sensitive to choice of prior.
@@ -922,252 +937,4 @@ results %>%
 - Results are a more conclusive yes: Belief in the effect being non zero may be dependant on choice of prior (i.e., only a very strong prior belief in the effect being true allows posterior belief to persist), but posterior belief that the effect is substantially smaller than that found in the published literature is independant of prior. 
 - As such, results give some small room to continue to believe in the effect if your prior beliefs are very strong, but they leave no doubt that effects are lower than in the published literature. 
 
-## Olson & Fazio exclusion criterion
 
-### Fit
-
-```{r}
-
-data_rrr_site_level_confirmatory <- 
-  read.csv("../../unconscious-ec-RRR/data/processed/data_processed.csv") %>%
-  mutate(data_collection_site = dplyr::recode(data_collection_site,
-                                              "Balas and Sarzynnska" = "Balas",
-                                              "Corneille and Mierop" = "Mierop",
-                                              "Gast Richter and Benedict" = "Gast",
-                                              "Gawronski" = "Gawronski",
-                                              "Hutter" = "Hütter",
-                                              "Kurdi and Ferguson" = "Kurdi",
-                                              "Moran Hussey and Hughes" = "Moran",
-                                              "Olsen and Fritzlen" = "Olson",
-                                              "Smith and Douglas" = "Douglas",
-                                              "Stahl Bading Aust Heycke and Thomasius" = "Stahl",
-                                              "Unkelbach and Hogden" = "Unkelbach",
-                                              "Vadillo" = "Vadillo")) %>%
-  filter(exclude_surveillance == FALSE & 
-           simulated_data == FALSE) %>%
-  rename(DV = sum_score_evaluation_CSpos_preferred) %>%
-  filter(exclude_aware_olsen_and_fazio == FALSE) %>%
-  dplyr::select(data_collection_site,
-                DV,
-                condition) %>%
-  group_by(data_collection_site) %>%
-  dplyr::summarize(preference_mean = mean(DV),
-                   preference_sd = sd(DV),
-                   preference_n = n()) %>%
-  # must have greater than N=2 per site to calculate SD etc
-  filter(preference_n > 2) %>%
-  # calculate h and its SE
-  dplyr::mutate(preference_cohens_dz = preference_mean/preference_sd,
-                cohens_dz_V = ((preference_n*2)/(preference_n^2)) +
-                  ((preference_cohens_dz^2) / (preference_n*4)),
-                J = 1 - (3/(4*(preference_n-1)-1)),
-                hedges_g = preference_cohens_dz * J,
-                hedges_g_V = J^2 * cohens_dz_V,
-                hedges_g_se = sqrt(hedges_g_V)) %>%
-  ungroup() %>%
-  dplyr::select(data_collection_site, hedges_g, hedges_g_se)
-
-fit_good_real_confirmatory <- update(fit_good_real, 
-                                     newdata = data_rrr_site_level_confirmatory, 
-                                     file = "models/fit_good_real_confirmatory")
-
-fit_poor_real_confirmatory <- update(fit_poor_real, 
-                                     newdata = data_rrr_site_level_confirmatory, 
-                                     file = "models/fit_poor_real_confirmatory")
-
-fit_good_null_confirmatory <- update(fit_good_null, 
-                                     newdata = data_rrr_site_level_confirmatory, 
-                                     file = "models/fit_good_null_confirmatory")
-
-fit_poor_null_confirmatory <- update(fit_poor_null, 
-                                     newdata = data_rrr_site_level_confirmatory, 
-                                     file = "models/fit_poor_null_confirmatory")
-
-```
-
-### Plots
-
-```{r}
-
-p_results_confirmatory <- 
-  bind_rows(
-    mutate(spread_draws(fit_good_real_confirmatory, b_Intercept), prior = "Well-estimated real effect"), 
-    mutate(spread_draws(fit_poor_real_confirmatory, b_Intercept), prior = "Poorly-estimated real effect"),
-    mutate(spread_draws(fit_poor_null_confirmatory, b_Intercept), prior = "Poorly-estimated null effect"),
-    mutate(spread_draws(fit_good_null_confirmatory, b_Intercept), prior = "Well-estimated null effect")
-  ) %>%
-  mutate(prior = fct_relevel(prior,
-                             "Well-estimated null effect",
-                             "Poorly-estimated null effect",
-                             "Poorly-estimated real effect",
-                             "Well-estimated real effect")) %>%
-  ggplot(aes(y = prior, x = b_Intercept, fill = stat(x > 0))) +
-  annotate("rect",
-           ymin  = -Inf, 
-           ymax  = +Inf, 
-           xmin  = rope_half_width*-1,
-           xmax  = rope_half_width,
-           alpha = +0.2) +
-  geom_vline(xintercept = 0, color = "darkgrey") +
-  stat_halfeyeh(.width = c(0.66, 0.95), alpha = 0.8) +
-  #scale_fill_manual(values = c("gray80", "skyblue")) +
-  scale_fill_viridis_d(begin = 0.4, end = 0.6) +
-  xlab(bquote("Posterior effect size" ~ delta)) +
-  ylab("Prior belief") +
-  labs(fill = "Effect > 0") +
-  theme_minimal()
-
-p_results_confirmatory
-
-```
-
-NB 66% and 95% HDIs. ROPE was $\delta$ = `r rope_half_width*-1` to `r rope_half_width`.
-
-### Table
-
-```{r}
-
-# Estimates
-
-results_posterior_confirmatory <- 
-  
-  bind_rows(
-    
-    fit_good_real_confirmatory %>%
-      posterior_summary(pars = "b_Intercept") %>%
-      as.data.frame() %>%
-      mutate(prior_certainty = "Well-estimated", 
-             prior_effect = "real effect"),
-    
-    fit_poor_real_confirmatory %>%
-      posterior_summary(pars = "b_Intercept") %>%
-      as.data.frame() %>%
-      mutate(prior_certainty = "Poorly-estimated", 
-             prior_effect = "real effect"),
-    
-    fit_poor_null_confirmatory %>%
-      posterior_summary(pars = "b_Intercept") %>%
-      as.data.frame() %>%
-      mutate(prior_certainty = "Poorly-estimated", 
-             prior_effect = "null effect"),
-    
-    fit_good_null_confirmatory %>%
-      posterior_summary(pars = "b_Intercept") %>%
-      as.data.frame() %>%
-      mutate(prior_certainty = "Well-estimated", 
-             prior_effect = "null effect")
-    
-  ) %>%
-  rownames_to_column(var = "parameter") %>%
-  rename(delta = Estimate,
-         error = Est.Error,
-         hdi_lower = Q2.5,
-         hdi_upper = Q97.5) %>%
-  mutate(delta_and_hdi = paste0(bquote(.(format(round(delta, 2), nsmall = 2))), 
-                                " [", 
-                                bquote(.(format(round(hdi_lower, 2), nsmall = 2))),
-                                ", ", 
-                                bquote(.(format(round(hdi_upper, 2), nsmall = 2))),
-                                "]"),
-         prior = as.factor(paste(prior_certainty, prior_effect)),
-         prior = fct_relevel(prior, 
-                             "Well-estimated null effect", 
-                             "Poorly-estimated null effect",
-                             "Poorly-estimated real effect", 
-                             "Well-estimated real effect")) %>%
-  dplyr::select(prior, delta, hdi_lower, hdi_upper, error, delta_and_hdi) %>%
-  round_df(2)
-
-
-# Equivalence test via Krushke method
-
-results_rope_confirmatory <- 
-  bind_rows(
-    mutate(bayestestR::equivalence_test(posterior_samples(fit_good_real_confirmatory)$b_Intercept, 
-                                        ci = 0.95,
-                                        range = c(rope_half_width*-1, rope_half_width),
-                                        ci_method = "HDI"),
-           prior = "Well-estimated real effect"),
-    
-    mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_real_confirmatory)$b_Intercept, 
-                                        ci = 0.95,
-                                        range = c(rope_half_width*-1, rope_half_width),
-                                        ci_method = "HDI"),
-           prior = "Poorly-estimated real effect"),
-    
-    mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_null_confirmatory)$b_Intercept, 
-                                        ci = 0.95,
-                                        range = c(rope_half_width*-1, rope_half_width),
-                                        ci_method = "HDI"),
-           prior = "Poorly-estimated null effect"),
-    
-    mutate(bayestestR::equivalence_test(posterior_samples(fit_good_null_confirmatory)$b_Intercept, 
-                                        ci = 0.95,
-                                        range = c(rope_half_width*-1, rope_half_width),
-                                        ci_method = "HDI"),
-           prior = "Well-estimated null effect")
-  ) %>%
-  mutate(p_in_rope = ROPE_Percentage) %>%
-  dplyr::select(prior, p_in_rope) %>%
-  round_df(5)
-
-# is the posterior effect size greater than zero?
-results_p_greater_zero_confirmatory <- 
-  bind_rows(
-    mutate(p_direction(fit_good_real_confirmatory), prior = "Well-estimated real effect"),
-    mutate(p_direction(fit_poor_real_confirmatory), prior = "Poorly-estimated real effect"),
-    mutate(p_direction(fit_poor_null_confirmatory), prior = "Poorly-estimated null effect"),
-    mutate(p_direction(fit_good_null_confirmatory), prior = "Well-estimated null effect")
-  ) %>%
-  mutate(p_greater_zero = 1 - pd) %>%
-  dplyr::select(prior, p_greater_zero) %>%
-  round_df(5)
-
-# is the posterior effect size smaller than the published literature?
-results_p_less_lit_confirmatory <- 
-  bind_rows(
-    mutate(hypothesis(fit_good_real_confirmatory, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
-           prior = "Well-estimated real effect"),
-    mutate(hypothesis(fit_poor_real_confirmatory, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
-           prior = "Poorly-estimated real effect"),
-    mutate(hypothesis(fit_poor_null_confirmatory, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
-           prior = "Poorly-estimated null effect"),
-    mutate(hypothesis(fit_good_null_confirmatory, "Intercept < 0.20", alpha = 0.25)$hypothesis, 
-           prior = "Well-estimated null effect")
-  ) %>%
-  mutate(p_less_lit = 1 - Post.Prob) %>%
-  select(prior, p_less_lit) %>%
-  round_df(5)
-
-# is the posterior effect size smaller than the original study we replicate?
-results_p_less_orig_confirmatory <- 
-  bind_rows(
-    mutate(hypothesis(fit_good_real_confirmatory, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
-           prior = "Well-estimated real effect"),
-    mutate(hypothesis(fit_poor_real_confirmatory, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
-           prior = "Poorly-estimated real effect"),
-    mutate(hypothesis(fit_poor_null_confirmatory, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
-           prior = "Poorly-estimated null effect"),
-    mutate(hypothesis(fit_good_null_confirmatory, "Intercept < 0.27", alpha = 0.25)$hypothesis, 
-           prior = "Well-estimated null effect")
-  ) %>%
-  mutate(p_less_orig = 1 - Post.Prob) %>%
-  select(prior, p_less_orig) %>%
-  round_df(5)
-
-
-# combined
-results_confirmatory <- results_posterior_confirmatory %>%
-  left_join(results_rope_confirmatory, by = "prior") %>%
-  left_join(results_p_greater_zero_confirmatory, by = "prior") %>%
-  left_join(results_p_less_lit_confirmatory, by = "prior") %>%
-  left_join(results_p_less_orig_confirmatory, by = "prior")
-
-# table
-results_confirmatory %>%
-  rowwise() %>%
-  dplyr::select(prior, delta_and_hdi, p_greater_zero, p_in_rope, p_less_lit, p_less_orig) %>%
-  kable() %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
-
-```
