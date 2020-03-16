@@ -314,13 +314,12 @@ simulation_iteration <- function(seed, data, fitted_model, effect_size, ...) {
     update(fitted_model,
            newdata = data_sim, 
            seed    = seed) %>% 
-    tidy(prob = .95) %>% 
+    broom::tidy(prob = .95) %>% 
     filter(term == "b_Intercept")
   
   return(fit)
   
 }
-
 
 # parameters
 k_sites                <- pull(count(data_rrr_site_level)) 
@@ -328,7 +327,7 @@ n_per_site             <- pull(round(count(data_rrr_participant_level)/k_sites, 
 true_effect_size       <- 0.17  # started with 0.16, from frequentist power analysis
 rope_half_width        <- 0.20
 between_site_variation <- 0.10  # rounded down from meta of existing literature, given RRR's stardardized methods its likely to be lower
-n_sim                  <- 100
+n_sim                  <- 2
 
 
 # fit archetypal model fits, which will be updated with new data in each sim
@@ -717,8 +716,6 @@ This is slightly suboptimal as a Bayesian power analysis would be better, but si
 
 ```{r}
 
-ROPE_cutoff <- 0.20
-
 # solutions from https://mjskay.github.io/tidybayes/articles/tidy-brms.html
 
 p_results <- 
@@ -737,8 +734,8 @@ p_results <-
   annotate("rect",
            ymin  = -Inf, 
            ymax  = +Inf, 
-           xmin  = ROPE_cutoff*-1,
-           xmax  = ROPE_cutoff,
+           xmin  = rope_half_width*-1,
+           xmax  = rope_half_width,
            alpha = +0.2) +
   geom_vline(xintercept = 0, color = "darkgrey") +
   stat_halfeyeh(.width = c(0.66, 0.95), alpha = 0.8) +
@@ -753,7 +750,7 @@ p_results
 
 ```
 
-NB 66% and 95% HDIs. ROPE was $\delta$ = `r ROPE_cutoff*-1` to `r ROPE_cutoff`.
+NB 66% and 95% HDIs. ROPE was $\delta$ = `r rope_half_width*-1` to `r rope_half_width`.
 
 ### Table
 
@@ -821,25 +818,25 @@ results_rope <-
   bind_rows(
     mutate(bayestestR::equivalence_test(posterior_samples(fit_good_real)$b_Intercept, 
                                         ci = 0.95,
-                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        range = c(rope_half_width*-1, rope_half_width),
                                         ci_method = "HDI"),
            prior = "Well-estimated real effect"),
     
     mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_real)$b_Intercept, 
                                         ci = 0.95,
-                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        range = c(rope_half_width*-1, rope_half_width),
                                         ci_method = "HDI"),
            prior = "Poorly-estimated real effect"),
     
     mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_null)$b_Intercept, 
                                         ci = 0.95,
-                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        range = c(rope_half_width*-1, rope_half_width),
                                         ci_method = "HDI"),
            prior = "Poorly-estimated null effect"),
     
     mutate(bayestestR::equivalence_test(posterior_samples(fit_good_null)$b_Intercept, 
                                         ci = 0.95,
-                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        range = c(rope_half_width*-1, rope_half_width),
                                         ci_method = "HDI"),
            prior = "Well-estimated null effect")
   ) %>%
@@ -1003,8 +1000,8 @@ p_results_confirmatory <-
   annotate("rect",
            ymin  = -Inf, 
            ymax  = +Inf, 
-           xmin  = ROPE_cutoff*-1,
-           xmax  = ROPE_cutoff,
+           xmin  = rope_half_width*-1,
+           xmax  = rope_half_width,
            alpha = +0.2) +
   geom_vline(xintercept = 0, color = "darkgrey") +
   stat_halfeyeh(.width = c(0.66, 0.95), alpha = 0.8) +
@@ -1019,7 +1016,7 @@ p_results_confirmatory
 
 ```
 
-NB 66% and 95% HDIs. ROPE was $\delta$ = `r ROPE_cutoff*-1` to `r ROPE_cutoff`.
+NB 66% and 95% HDIs. ROPE was $\delta$ = `r rope_half_width*-1` to `r rope_half_width`.
 
 ### Table
 
@@ -1083,25 +1080,25 @@ results_rope_confirmatory <-
   bind_rows(
     mutate(bayestestR::equivalence_test(posterior_samples(fit_good_real_confirmatory)$b_Intercept, 
                                         ci = 0.95,
-                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        range = c(rope_half_width*-1, rope_half_width),
                                         ci_method = "HDI"),
            prior = "Well-estimated real effect"),
     
     mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_real_confirmatory)$b_Intercept, 
                                         ci = 0.95,
-                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        range = c(rope_half_width*-1, rope_half_width),
                                         ci_method = "HDI"),
            prior = "Poorly-estimated real effect"),
     
     mutate(bayestestR::equivalence_test(posterior_samples(fit_poor_null_confirmatory)$b_Intercept, 
                                         ci = 0.95,
-                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        range = c(rope_half_width*-1, rope_half_width),
                                         ci_method = "HDI"),
            prior = "Poorly-estimated null effect"),
     
     mutate(bayestestR::equivalence_test(posterior_samples(fit_good_null_confirmatory)$b_Intercept, 
                                         ci = 0.95,
-                                        range = c(ROPE_cutoff*-1, ROPE_cutoff),
+                                        range = c(rope_half_width*-1, rope_half_width),
                                         ci_method = "HDI"),
            prior = "Well-estimated null effect")
   ) %>%
