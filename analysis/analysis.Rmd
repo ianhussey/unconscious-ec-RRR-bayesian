@@ -260,6 +260,15 @@ p_priors
 
 # Power analyses via simulation studies
 
+Based on Solomon Kurz's [example](https://solomonkurz.netlify.com/post/bayesian-power-analysis-part-i/) of a fixed effects only model.
+
+Changes:
+
+- Parallelisation speeds up runtime - cuts time by more than 75% on my pc. Moved from purrr::map to furrr::future_map
+- Simulates data with a multilevel structure with known sigma.
+- Simulates impact of weak vs strong priors located on null vs true effect
+- Simulates not only power to detect true effect but also probability of detecting effect inside ROPE, and probability of HDI containing true value. 
+
 ## Setup
 
 ```{r}
@@ -327,7 +336,7 @@ n_per_site             <- pull(round(count(data_rrr_participant_level)/k_sites, 
 true_effect_size       <- 0.17  # started with 0.16, from frequentist power analysis
 rope_half_width        <- 0.20
 between_site_variation <- 0.10  # rounded down from meta of existing literature, given RRR's stardardized methods its likely to be lower
-n_sim                  <- 2
+n_sim                  <- 300
 
 
 # fit archetypal model fits, which will be updated with new data in each sim
@@ -709,10 +718,6 @@ fit_good_null <-
 ```
 
 ### Plots 
-
-I use ROPE = c(-0.16, 0.16) on the basis that a frequentist power analysis for meta analysis models demonstrated that our available sample size has 80% power to detect effect >= 0.16. I.e., agnostic to whether the effect is real or null, this is the estimation width we have 80% power to detect. 
-
-This is slightly suboptimal as a Bayesian power analysis would be better, but simulating such multilevel data is non-trivial. There are working [examples](https://solomonkurz.netlify.com/post/bayesian-power-analysis-part-i/) for much simpler fixed effects only models however.
 
 ```{r}
 
