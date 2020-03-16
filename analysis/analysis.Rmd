@@ -360,7 +360,7 @@ fit_good_real_sim_archetype <-
 
 fit_poor_real_sim_archetype <- 
   brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
-      prior         = c(prior(normal(0.20, 1.00), class = b),
+      prior         = c(prior(normal(0.20, 0.25), class = b),
                         prior(cauchy(0.00, 0.25), class = sd)),
       family        = gaussian(),
       data          = simulate_data(effect_size            = true_effect_size,
@@ -378,7 +378,7 @@ fit_poor_real_sim_archetype <-
 
 fit_poor_null_sim_archetype <- 
   brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
-      prior         = c(prior(normal(0.00, 1.00), class = b),
+      prior         = c(prior(normal(0.00, 0.25), class = b),
                         prior(cauchy(0.00, 0.25), class = sd)),
       family        = gaussian(),
       data          = simulate_data(effect_size            = true_effect_size,
@@ -686,7 +686,7 @@ fit_good_real <-
 ### Poorly-estimated real effect
 fit_poor_real <- 
   brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
-      prior         = c(prior(normal(0.20, 1.00), class = b),
+      prior         = c(prior(normal(0.20, 0.25), class = b),
                         prior(cauchy(0.00, 0.25), class = sd)),
       family        = gaussian(),
       data          = data_rrr_site_level, 
@@ -704,7 +704,7 @@ fit_poor_real <-
 ### Poorly-estimated null effect
 fit_poor_null <- 
   brm(formula       = hedges_g | se(hedges_g_se) ~ 0 + Intercept + (1 | data_collection_site),
-      prior         = c(prior(normal(0.00, 1.00), class = b),
+      prior         = c(prior(normal(0.00, 0.25), class = b),
                         prior(cauchy(0.00, 0.25), class = sd)),
       family        = gaussian(),
       data          = data_rrr_site_level, 
