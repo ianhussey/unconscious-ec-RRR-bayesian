@@ -136,9 +136,9 @@ Let's first take a step back to define the "Evaluative Conditioning" part of thi
 
 The question raised by Olson & Fazio (2001) is one that is at the center of many debates with the study of psychology, and represents two vastly different world views. 
 
-One the one hand, maybe the human mind is relatively boring, and the participants in our EC studies dislike "CUG" follows the same definition of EC as the researcher used to create the study: "Well, you paired CUG with Cancer, and cancer is negative, so therefore CUG is negative." This is referred to as the Inferential Account of EC (REF). I like the linguistic sales pitch being done by the name of this account: it does a nice job of dressing up the fact that all it's saying is that your participants in EC studies possess the same reasoning ability as you the researcher do, and they 'solve' the puzzle presented by the study (i.e., pairings are usually a cue for 'sameness').
+One the one hand, maybe the human mind is relatively boring, and the reason participants in our EC studies dislike "CUG" follows the same definition of EC as the researcher used to create the study: "Well, you paired CUG with Cancer, and cancer is negative, so therefore CUG is negative." This is referred to as the Inferential Account of EC (REF). I like the linguistic sales pitch being done by the name of this account: it does a nice job of dressing up the fact that all it's saying is that your participants in EC studies possess the same reasoning ability as you the researcher do, and they 'solve' the puzzle presented by the study (i.e., pairings are usually a cue for 'sameness').
 
-On the other hand, maybe the human mind is mysterious, deep and just plain cool. Maybe it's doing all sorts of calculations that we are unaware of and only letting our conscious mind in on some of it. Maybe you do have the hidden depth that your existential dread yearns for. More specifically, maybe there are participants who think "CUG" is now negative despite being unaware that it was ever paired with "Cancer". This would allow us to think and talk about things like "low level", and "automatic" "cognitive processes" that occur "outside of awareness", and other validations of what I have come to see as our collective need for quasi religious mystery in psychology. It is, as commentators in the 2015 US presidential campaign used to say, "Big, if true".  
+On the other hand, maybe the human mind is mysterious, deep and just plain cool. Maybe it's doing all sorts of calculations that we are unaware of and only letting our conscious mind in on some of it. By implication, maybe you do have the hidden depth that your existential dread yearns for. More specifically, maybe there are participants who now think "CUG" is negative despite being unaware that it was ever paired with "Cancer". This would allow us to think and talk about things like "low level cognitive processes" that are "automatic" or "occur outside of awareness", or other validations of our collective need for quasi religious mystery in psychology. It is, as commentators in the 2015 US presidential campaign used to say, "Big, if true".  
 
 Perhaps by this stage you have some idea of which camp I'm in.
 
@@ -146,30 +146,17 @@ At this point, as a reader, maybe its tempting to think that I am being biased h
 
 Here's were the benefits of Bayesian statistics come in: prior beliefs - the lense through which we interpret new data - can be quantified; we can examine their impact on conclusions; and we can consider more than one. For example, we can formalize how a true believer in Unaware Evalautive Conditioning vs. a hardline skeptic should each interpret the results of Moran et al. (2020). 
 
-This isn't attempt to be 'free of bias' - an idea that appeals to a false sense of attainable objectivity and scientism - but instead to explicate our prior beliefs and integreat them in our analysis. 
+This isn't attempt to be 'free of bias' - an idea that appeals to a false sense of attainable objectivity and scientism - but instead allows us to explicate our prior beliefs and integrate them into our analysis and conclusions. It also allows you to see the same data through the lens of others' beliefs.  
 
 # Bayesian analysis and defining priors
 
 The process of choosing priors is something many people initially find difficult when learning Bayesian analysis. 
 
+There was another key feature of this project that got me interested in it: the draft manuscript already contained a meta analysis of the published literature. 
+
 Personally, I think a reasonable way to choose priors is to look to the existing published literature. This isn't to say that the published literature is unbiased - it almost definitely is, as multiple large scale repliation effects in the last few years have [shown us](https://www.frontiersin.org/articles/10.3389/fpsyg.2019.00813/full). Nonetheless, the literature gives us a starting point. 
 
-
-
-
-
-The intuition here is relatively simple: 
-
-many   and then ask people to rate the neutral stimulus, the people who say that the neutral stimulus has acquired a valence 
-
-There were several features of this project that got me interested in it.
-
-
-- The draft manuscript already contained a meta analysis of the published literature. 
-
-Creating priors using posteriors from published literature
-
-Meta analyis of published literature
+Creating priors using posteriors from published literature...
 
 ```{r}
 
@@ -251,15 +238,6 @@ p_priors
 ```
 
 # Power analyses
-
-Based on Solomon Kurz's [example](https://solomonkurz.netlify.com/post/bayesian-power-analysis-part-i/) of a fixed effects only model.
-
-Changes:
-
-- Parallelisation speeds up runtime - cuts time by more than 75% on my pc. Moved from purrr::map to furrr::future_map
-- Simulates data with a multilevel structure with known sigma.
-- Simulates impact of weak vs strong priors located on null vs true effect
-- Simulates not only power to detect true effect but also probability of detecting effect inside ROPE, and probability of HDI containing true value. 
 
 ```{r}
 
@@ -642,7 +620,7 @@ simulations$results %>%
 
 # Analysis
 
-Using compound exclusion criterion
+Using compound exclusion criterion (Hussey & Hughes, 2020)
 
 ```{r}
 

@@ -350,7 +350,7 @@ fit_good_real_sim_archetype <-
                                     n_per_site             = n_per_site,
                                     between_site_variation = between_site_variation), 
       seed          = 1,
-      #iter          = 6000,
+      iter          = 6000,
       #control       = list(adapt_delta = 0.95),
       cores         = parallel::detectCores(), 
       chains        = 4,
@@ -368,7 +368,7 @@ fit_poor_real_sim_archetype <-
                                     n_per_site             = n_per_site,
                                     between_site_variation = between_site_variation), 
       seed          = 1,
-      #iter          = 6000,
+      iter          = 6000,
       #control       = list(adapt_delta = 0.95),
       cores         = parallel::detectCores(), 
       chains        = 4,
@@ -386,7 +386,7 @@ fit_poor_null_sim_archetype <-
                                     n_per_site             = n_per_site,
                                     between_site_variation = between_site_variation), 
       seed          = 1,
-      #iter          = 6000,
+      iter          = 6000,
       #control       = list(adapt_delta = 0.95),
       cores         = parallel::detectCores(), 
       chains        = 4,
@@ -404,7 +404,7 @@ fit_good_null_sim_archetype <-
                                     n_per_site             = n_per_site,
                                     between_site_variation = between_site_variation), 
       seed          = 1,
-      #iter          = 6000,
+      iter          = 6000,
       #control       = list(adapt_delta = 0.95),
       cores         = parallel::detectCores(), 
       chains        = 4,
@@ -564,18 +564,21 @@ if(file.exists("models/simulations.RData")){
 simulations$time
 
 # plot
-simulations$results %>% 
+simulations$results %>%
   mutate(seed = fct_reorder(as.factor(seed), estimate),
          true_effect_string = paste("True effect =", true_effect),
          prior_string = paste("Prior:", prior)) %>%
-  arrange(seed) %>%
-  rownames_to_column(var = "rowname") %>%
-  mutate(rowname = as.numeric(as.character(rowname))) %>%
-  ggplot(aes(x = rowname, y = estimate, ymin = lower, ymax = upper)) +
+  group_by(true_effect_string, prior_string) %>%
+  mutate(id = row_number()) %>%
+  ungroup() %>%
+  arrange(estimate) %>%
+  group_by(true_effect_string, prior_string) %>%
+  mutate(id_order = row_number()) %>%
+  ggplot(aes(x = id_order, y = estimate, ymin = lower, ymax = upper)) +
   facet_wrap(~ true_effect_string + prior_string, ncol = 2) +
   annotate("rect",
-           xmin  = -Inf, 
-           xmax  = +Inf, 
+           xmin  = -Inf,
+           xmax  = +Inf,
            ymin  = rope_half_width*-1,
            ymax  = rope_half_width,
            alpha = +0.2) +
@@ -583,20 +586,23 @@ simulations$results %>%
   geom_hline(aes(yintercept = true_effect), linetype = "dashed", color = "darkgreen") +
   geom_pointrange(fatten = 0.5, alpha = 0.7) +
   labs(x = "Simulation iterations",
-       y = expression(delta)) +
+       y = bquote("Posterior effect size" ~ delta)) +
   theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank())
+        axis.ticks.x = element_blank()) +
+  theme_minimal()
 
 simulations$results %>% 
-  filter(prior == "Poorly-estimated null effect") %>%
+  filter(true_effect == true_effect_size & prior == "Poorly-estimated null effect") %>%
   mutate(seed = fct_reorder(as.factor(seed), estimate),
          true_effect_string = paste("True effect =", true_effect),
          prior_string = paste("Prior:", prior)) %>%
-  arrange(seed) %>%
-  rownames_to_column(var = "rowname") %>%
-  mutate(rowname = as.numeric(as.character(rowname))) %>%
-  ggplot(aes(x = rowname, y = estimate, ymin = lower, ymax = upper)) +
-  facet_wrap(~ true_effect_string, ncol = 1) +
+  group_by(true_effect_string, prior_string) %>%
+  mutate(id = row_number()) %>%
+  ungroup() %>%
+  arrange(estimate) %>%
+  group_by(true_effect_string, prior_string) %>%
+  mutate(id_order = row_number()) %>%
+  ggplot(aes(x = id_order, y = estimate, ymin = lower, ymax = upper)) +
   annotate("rect",
            xmin  = -Inf, 
            xmax  = +Inf, 
@@ -607,9 +613,10 @@ simulations$results %>%
   geom_hline(aes(yintercept = true_effect), linetype = "dashed", color = "darkgreen") +
   geom_pointrange(fatten = 0.5, alpha = 0.7) +
   labs(x = "Simulation iterations",
-       y = expression(delta)) +
+       y = bquote("Posterior effect size" ~ delta)) +
   theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank())
+        axis.ticks.x = element_blank()) +
+  theme_minimal()
 
 # table
 simulations$results %>% 
@@ -628,14 +635,15 @@ simulations$results %>%
                              "Poorly-estimated null effect",
                              "Well-estimated null effect")) %>%
   arrange(desc(true_effect), prior) %>%
+  round_df(3) %>%
   kable() %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
 
-simulations$results %>% 
+simulations$results %>%
   filter(prior == "Poorly-estimated null effect") %>%
   mutate(null_test = ifelse(lower > 0, 1, 0),
          hdi_estimation = ifelse(lower < true_effect & upper > true_effect, 1, 0),
-         rope_test = ifelse(lower > (rope_half_width*-1) & upper < rope_half_width, 1, 0)) %>% 
+         rope_test = ifelse(lower > (rope_half_width*-1) & upper < rope_half_width, 1, 0)) %>%
   group_by(true_effect) %>%
   summarise(mean_estimate   = round(mean(estimate), 2),
             sd_estimate     = round(sd(estimate), 2),
@@ -643,6 +651,7 @@ simulations$results %>%
             power_rope_test = mean(rope_test),
             power_esimation = mean(hdi_estimation)) %>%
   arrange(desc(true_effect)) %>%
+  round_df(3) %>%
   kable() %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
 
