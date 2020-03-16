@@ -1,8 +1,5 @@
 ---
-title: "Unconscious EC RRR"
-subtitle: "The influence of prior beliefs on conclusions"
-author: "Ian Hussey^[Ghent University. Email: ian.hussey@ugent.be]"
-date: "`r format(Sys.time(), '%d %B %Y')`"
+title: "How should prior beliefs influence our conclusions from Moran et al. (2020)?"
 output:
   html_document:
     code_folding: hide
@@ -13,9 +10,13 @@ output:
     toc_float: yes
 ---
 
+<style>
+body {text-align: justify}
+</style>
+
 ```{r setup, include=FALSE}
 
-knitr::opts_chunk$set(echo = TRUE, 
+knitr::opts_chunk$set(echo = FALSE, 
                       message = FALSE, 
                       warning = FALSE)
 
@@ -26,8 +27,6 @@ options(knitr.table.format = "html") # necessary configuration of tables
 options(scipen = 999) 
 
 ```
-
-# Data, dependencies & functions
 
 ```{r}
 
@@ -125,9 +124,52 @@ data_rrr_site_level <- data_rrr_participant_level %>%
 
 ```
 
-# Creating priors using posteriors from published literature
+# Is the mind an iceberg or a puddle?
 
-## Meta analyis of published literature
+I recently had the opportunity to be involved in Moran, Hughes, Hussey, Valdilo, Olson, et al.'s (2020) Registered Replication Report. This was a replication of Olson & Fazio's (2001) study on attitude formation via stimulus pairing (Evalautive Conditioning) in the absence of awareness that stimuli had been paired. 
+
+A bit of a mouthful, but a key motivator for me was that Olson & Fazio (2001) is (a) highly cited and influential upon later theoretical and empirical work, and yet (b) when you ask them informally, most researchers in the field say they doubt the effect would replicate. 
+
+Why? 
+
+Let's first take a step back to define the "Evaluative Conditioning" part of this study before we bring awareness into the equation. Typically, if you pair an initually neutral stimulus like the non-word "CUG" with a negatively valenced stimulus like "Cancer", CUG is later rated as more negative. This example forms the definition of Evaluative Conditioning (EC): changes in liking due to the prior pairing of stimuli (REF). I should note that there is nothing particularly controversial about the concept of EC - that comes later.
+
+The question raised by Olson & Fazio (2001) is one that is at the center of many debates with the study of psychology, and represents two vastly different world views. 
+
+One the one hand, maybe the human mind is relatively boring, and the participants in our EC studies dislike "CUG" follows the same definition of EC as the researcher used to create the study: "Well, you paired CUG with Cancer, and cancer is negative, so therefore CUG is negative." This is referred to as the Inferential Account of EC (REF). I like the linguistic sales pitch being done by the name of this account: it does a nice job of dressing up the fact that all it's saying is that your participants in EC studies possess the same reasoning ability as you the researcher do, and they 'solve' the puzzle presented by the study (i.e., pairings are usually a cue for 'sameness').
+
+On the other hand, maybe the human mind is mysterious, deep and just plain cool. Maybe it's doing all sorts of calculations that we are unaware of and only letting our conscious mind in on some of it. Maybe you do have the hidden depth that your existential dread yearns for. More specifically, maybe there are participants who think "CUG" is now negative despite being unaware that it was ever paired with "Cancer". This would allow us to think and talk about things like "low level", and "automatic" "cognitive processes" that occur "outside of awareness", and other validations of what I have come to see as our collective need for quasi religious mystery in psychology. It is, as commentators in the 2015 US presidential campaign used to say, "Big, if true".  
+
+Perhaps by this stage you have some idea of which camp I'm in.
+
+At this point, as a reader, maybe its tempting to think that I am being biased here. I whole heartedly agree, and don't think this is a bad thing. 
+
+Here's were the benefits of Bayesian statistics come in: prior beliefs - the lense through which we interpret new data - can be quantified; we can examine their impact on conclusions; and we can consider more than one. For example, we can formalize how a true believer in Unaware Evalautive Conditioning vs. a hardline skeptic should each interpret the results of Moran et al. (2020). 
+
+This isn't attempt to be 'free of bias' - an idea that appeals to a false sense of attainable objectivity and scientism - but instead to explicate our prior beliefs and integreat them in our analysis. 
+
+# Bayesian analysis and defining priors
+
+The process of choosing priors is something many people initially find difficult when learning Bayesian analysis. 
+
+Personally, I think a reasonable way to choose priors is to look to the existing published literature. This isn't to say that the published literature is unbiased - it almost definitely is, as multiple large scale repliation effects in the last few years have [shown us](https://www.frontiersin.org/articles/10.3389/fpsyg.2019.00813/full). Nonetheless, the literature gives us a starting point. 
+
+
+
+
+
+The intuition here is relatively simple: 
+
+many   and then ask people to rate the neutral stimulus, the people who say that the neutral stimulus has acquired a valence 
+
+There were several features of this project that got me interested in it.
+
+
+- The draft manuscript already contained a meta analysis of the published literature. 
+
+Creating priors using posteriors from published literature
+
+Meta analyis of published literature
 
 ```{r}
 
@@ -145,33 +187,9 @@ fit_published <-
       sample_prior  = TRUE,
       file          = "models/fit_published")
 
-tab_model(fit_published)
+#tab_model(fit_published)
 
 ```
-
-```{r}
-
-posterior_published_literature <- 
-  fit_published %>%
-  posterior_samples() %>%
-  dplyr::select(b_Intercept, sd_study__Intercept)
-
-ggplot(posterior_published_literature, aes(sd_study__Intercept)) +
-  geom_density()
-
-ggplot(posterior_published_literature, aes(b_Intercept)) +
-  geom_density()
-
-fitdistr(posterior_published_literature$b_Intercept,"normal")
-
-# sigma will use cauchy distribution with scaling factor = mean of posterior sigma. i.e., 50% chance that it will fall within 0 < scaling factor
-mean(posterior_published_literature$sd_study__Intercept)
-
-```
-
-## Meta analysis with publicaiton bias correction method
-
-Posterior of Egger method bias corrected meta Miguel reported as prior for RRR meta, i.e., entering SE as a covariate.
 
 ```{r}
 
@@ -189,39 +207,13 @@ fit_published_egger <-
       sample_prior  = TRUE,
       file          = "models/fit_published_egger")
 
-tab_model(fit_published_egger)
+#tab_model(fit_published_egger)
 
 ```
-
-```{r}
-
-posterior_published_literature_egger <- 
-  fit_published_egger %>%
-  posterior_samples() %>%
-  dplyr::select(b_Intercept, sd_study__Intercept)
-
-ggplot(posterior_published_literature_egger, aes(sd_study__Intercept)) +
-  geom_density()
-
-ggplot(posterior_published_literature_egger, aes(b_Intercept)) +
-  geom_density()
-
-fitdistr(posterior_published_literature_egger$b_Intercept,"normal")
-
-# sigma will use cauchy distribution with scaling factor = mean of posterior sigma. i.e., 50% chance that it will fall within 0 < scaling factor
-mean(posterior_published_literature_egger$sd_study__Intercept)
-
-```
-
-## Priors
 
 NB all use Sigma = cauchy(location = 0.00, scaling = 0.50) for the sd of the random effect for site.
 
-```{r}
-
-read.csv("priors.csv") %>%
-  kable() %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```{r fig.height=3, fig.width=7}
 
 p_priors <-
   ggplot(data = data.frame(x = c(-3, 3)), aes(x)) +
@@ -258,7 +250,7 @@ p_priors
 
 ```
 
-# Power analyses via simulation studies
+# Power analyses
 
 Based on Solomon Kurz's [example](https://solomonkurz.netlify.com/post/bayesian-power-analysis-part-i/) of a fixed effects only model.
 
@@ -268,8 +260,6 @@ Changes:
 - Simulates data with a multilevel structure with known sigma.
 - Simulates impact of weak vs strong priors located on null vs true effect
 - Simulates not only power to detect true effect but also probability of detecting effect inside ROPE, and probability of HDI containing true value. 
-
-## Setup
 
 ```{r}
 
@@ -414,8 +404,6 @@ fit_good_null_sim_archetype <-
 
 ```
 
-## Run  
-
 ```{r message=FALSE, warning=FALSE}
 
 if(file.exists("models/simulations.RData")){
@@ -556,47 +544,48 @@ if(file.exists("models/simulations.RData")){
 
 ```
 
-## Summarize sims
-
-```{r fig.height=9, fig.width=7}
-
-# simulation time
-simulations$time
+```{r fig.height=3, fig.width=7}
 
 # plot
-simulations$results %>% 
-  mutate(seed = fct_reorder(as.factor(seed), estimate),
-         true_effect_string = paste("True effect =", true_effect),
-         prior_string = paste("Prior:", prior)) %>%
-  arrange(seed) %>%
-  rownames_to_column(var = "rowname") %>%
-  mutate(rowname = as.numeric(as.character(rowname))) %>%
-  ggplot(aes(x = rowname, y = estimate, ymin = lower, ymax = upper)) +
-  facet_wrap(~ true_effect_string + prior_string, ncol = 2) +
-  annotate("rect",
-           xmin  = -Inf, 
-           xmax  = +Inf, 
-           ymin  = rope_half_width*-1,
-           ymax  = rope_half_width,
-           alpha = +0.2) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
-  geom_hline(aes(yintercept = true_effect), linetype = "dashed", color = "darkgreen") +
-  geom_pointrange(fatten = 0.5, alpha = 0.7) +
-  labs(x = "Simulation iterations",
-       y = expression(delta)) +
-  theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank())
+# simulations$results %>% 
+#   mutate(seed = fct_reorder(as.factor(seed), estimate),
+#          true_effect_string = paste("True effect =", true_effect),
+#          prior_string = paste("Prior:", prior)) %>%
+#   group_by(true_effect_string, prior_string) %>%
+#   mutate(id = row_number()) %>%
+#   ungroup() %>%
+#   arrange(estimate) %>%
+#   group_by(true_effect_string, prior_string) %>%
+#   mutate(id_order = row_number()) %>%
+#   ggplot(aes(x = id_order, y = estimate, ymin = lower, ymax = upper)) +
+#   facet_wrap(~ true_effect_string + prior_string, ncol = 2) +
+#   annotate("rect",
+#            xmin  = -Inf, 
+#            xmax  = +Inf, 
+#            ymin  = rope_half_width*-1,
+#            ymax  = rope_half_width,
+#            alpha = +0.2) +
+#   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+#   geom_hline(aes(yintercept = true_effect), linetype = "dashed", color = "darkgreen") +
+#   geom_pointrange(fatten = 0.5, alpha = 0.7) +
+#   labs(x = "Simulation iterations",
+#        y = bquote("Posterior effect size" ~ delta)) +
+#   theme(axis.text.x = element_blank(),
+#         axis.ticks.x = element_blank()) +
+#   theme_minimal()
 
 simulations$results %>% 
-  filter(prior == "Poorly-estimated null effect") %>%
+  filter(true_effect == true_effect_size & prior == "Poorly-estimated null effect") %>%
   mutate(seed = fct_reorder(as.factor(seed), estimate),
          true_effect_string = paste("True effect =", true_effect),
          prior_string = paste("Prior:", prior)) %>%
-  arrange(seed) %>%
-  rownames_to_column(var = "rowname") %>%
-  mutate(rowname = as.numeric(as.character(rowname))) %>%
-  ggplot(aes(x = rowname, y = estimate, ymin = lower, ymax = upper)) +
-  facet_wrap(~ true_effect_string, ncol = 1) +
+  group_by(true_effect_string, prior_string) %>%
+  mutate(id = row_number()) %>%
+  ungroup() %>%
+  arrange(estimate) %>%
+  group_by(true_effect_string, prior_string) %>%
+  mutate(id_order = row_number()) %>%
+  ggplot(aes(x = id_order, y = estimate, ymin = lower, ymax = upper)) +
   annotate("rect",
            xmin  = -Inf, 
            xmax  = +Inf, 
@@ -607,9 +596,10 @@ simulations$results %>%
   geom_hline(aes(yintercept = true_effect), linetype = "dashed", color = "darkgreen") +
   geom_pointrange(fatten = 0.5, alpha = 0.7) +
   labs(x = "Simulation iterations",
-       y = expression(delta)) +
+       y = bquote("Posterior effect size" ~ delta)) +
   theme(axis.text.x = element_blank(),
-        axis.ticks.x = element_blank())
+        axis.ticks.x = element_blank()) +
+  theme_minimal()
 
 # table
 simulations$results %>% 
@@ -628,31 +618,31 @@ simulations$results %>%
                              "Poorly-estimated null effect",
                              "Well-estimated null effect")) %>%
   arrange(desc(true_effect), prior) %>%
+  round_df(3) %>%
   kable() %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
 
-simulations$results %>% 
-  filter(prior == "Poorly-estimated null effect") %>%
-  mutate(null_test = ifelse(lower > 0, 1, 0),
-         hdi_estimation = ifelse(lower < true_effect & upper > true_effect, 1, 0),
-         rope_test = ifelse(lower > (rope_half_width*-1) & upper < rope_half_width, 1, 0)) %>% 
-  group_by(true_effect) %>%
-  summarise(mean_estimate   = round(mean(estimate), 2),
-            sd_estimate     = round(sd(estimate), 2),
-            power_null_test = mean(null_test),
-            power_rope_test = mean(rope_test),
-            power_esimation = mean(hdi_estimation)) %>%
-  arrange(desc(true_effect)) %>%
-  kable() %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+# simulations$results %>% 
+#   filter(prior == "Poorly-estimated null effect") %>%
+#   mutate(null_test = ifelse(lower > 0, 1, 0),
+#          hdi_estimation = ifelse(lower < true_effect & upper > true_effect, 1, 0),
+#          rope_test = ifelse(lower > (rope_half_width*-1) & upper < rope_half_width, 1, 0)) %>% 
+#   group_by(true_effect) %>%
+#   summarise(mean_estimate   = round(mean(estimate), 2),
+#             sd_estimate     = round(sd(estimate), 2),
+#             power_null_test = mean(null_test),
+#             power_rope_test = mean(rope_test),
+#             power_esimation = mean(hdi_estimation)) %>%
+#   arrange(desc(true_effect)) %>%
+#   round_df(3) %>%
+#   kable() %>%
+#   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
 
 ```
 
-# Analyses of RRR data
+# Analysis
 
 Using compound exclusion criterion
-
-## Fit
 
 ```{r}
 
@@ -729,8 +719,6 @@ fit_good_null <-
 
 ```
 
-## Plots 
-
 ```{r}
 
 # solutions from https://mjskay.github.io/tidybayes/articles/tidy-brms.html
@@ -768,8 +756,6 @@ p_results
 ```
 
 NB 66% and 95% HDIs. ROPE was $\delta$ = `r rope_half_width*-1` to `r rope_half_width`.
-
-## Table
 
 ```{r}
 
@@ -915,7 +901,7 @@ results <- results_posterior %>%
 
 # table
 results %>%
-  rowwise() %>%
+  round_df(3) %>%
   dplyr::select(prior, delta_and_hdi, p_greater_zero, p_in_rope, p_less_lit, p_less_orig) %>%
   kable() %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
@@ -936,5 +922,13 @@ results %>%
 - It is also meaningful to ask is the effect greater or smaller than the ES in the published literature. 
 - Results are a more conclusive yes: Belief in the effect being non zero may be dependant on choice of prior (i.e., only a very strong prior belief in the effect being true allows posterior belief to persist), but posterior belief that the effect is substantially smaller than that found in the published literature is independant of prior. 
 - As such, results give some small room to continue to believe in the effect if your prior beliefs are very strong, but they leave no doubt that effects are lower than in the published literature. 
+
+
+
+
+- One of the original authors, Olson, was involved in the replication. 
+- Both of the original authors agreed to approve the study protocol prior to registration and data collection.
+- It was a multi-site replication with 12 different labs around the world. 
+- The project provided me with novel challenges around making the materials and analyses maximally reproducible. 
 
 
